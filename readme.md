@@ -29,14 +29,14 @@ pointed to by `$TPLINK_ENV` (precedence, low → high: user config → project `
 ## CLI
 
 The router only allows **one admin session at a time**, so each `tplink <command>` logs
-in, runs, and logs out — releasing the session for the web UI. For several commands in a
-row, use the interactive session instead (one login, logout on `exit`):
+in, runs, and logs out, releasing the session for the web UI. For several commands in a
+row, use the interactive session instead:
 
 ```sh
 tplink                   # interactive session:
-  tplink> clients
-  tplink> raw status?form=internet --op read   # no quoting needed in here
-  tplink> exit           # logs out
+tplink> clients
+tplink> raw status?form=internet --op read   # no quoting needed in here
+ tplink> exit           # logs out
 ```
 
 One-shot commands:
@@ -54,9 +54,7 @@ tplink raw 'status?form=client_status' --op load --json  # call any endpoint dir
 ```
 
 Quote the `raw` path in your shell (the `?` is a glob) — not needed inside the interactive
-session. Add `--json` to most commands for machine-readable output. If the web UI (or
-another client) takes over the session mid-use, the CLI and MCP server re-log-in
-automatically and retry.
+session. Add `--json` to most commands for machine-readable output. 
 
 ## MCP server
 
