@@ -55,7 +55,18 @@ def test_redact_secrets_masks_dump_fields():
 
     data = {
         "wifi": [{"ssid": "Net", "password": "hunter2"}],
-        "radios": {"2g": {"channel": "6", "psk_key": "k", "wep_key1": "w"}},
+        "radios": {
+            "2g": {
+                "channel": "6",
+                "psk_key": "k",
+                "wep_key1": "w",
+                # mode/cipher enums — NOT secrets; callers need them (WPA3 verification)
+                "psk_version": "sae_transition",
+                "psk_cipher": "aes",
+                "wpa_version": "auto",
+                "wep_type1": "64",
+            }
+        },
     }
     red = redact_secrets(data)
     assert red["wifi"][0]["ssid"] == "Net"
@@ -63,6 +74,11 @@ def test_redact_secrets_masks_dump_fields():
     assert "redact" in red["wifi"][0]["password"]
     assert "redact" in red["radios"]["2g"]["psk_key"]
     assert "redact" in red["radios"]["2g"]["wep_key1"]
+    # enums must pass through untouched
+    assert red["radios"]["2g"]["psk_version"] == "sae_transition"
+    assert red["radios"]["2g"]["psk_cipher"] == "aes"
+    assert red["radios"]["2g"]["wpa_version"] == "auto"
+    assert red["radios"]["2g"]["wep_type1"] == "64"
     assert redact_secrets(data, reveal=True) == data
 
 

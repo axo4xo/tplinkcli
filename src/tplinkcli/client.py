@@ -614,7 +614,9 @@ def _is_conflict(decoded: dict[str, Any]) -> bool:
     return "conflict" in blob or "logined_user" in blob or "login_status" in blob
 
 
-_SECRET_KEY_HINTS = ("psk", "password", "pwd", "wpa_key", "wep_key", "portal_password", "_key")
+# Match only actual secret material — NOT mode/cipher enums like psk_version / psk_cipher /
+# wpa_version / wep_type, which callers legitimately need (e.g. to verify WPA3 state).
+_SECRET_KEY_HINTS = ("psk_key", "wpa_key", "wep_key", "password", "pwd")
 _REDACTED = "***redacted*** (reveal_secrets=true to show)"
 
 
