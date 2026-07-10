@@ -267,13 +267,14 @@ class TplinkClient:
 
         Best-effort: if the session is already gone, there is nothing to release.
         """
-        if self.logged_in:
-            try:
-                self.request("system?form=logout", operation="write")
-            except Exception:
-                pass  # session may already be gone / router rebooting
-        self.stok = ""
-        self.encryptor = None
+        with self._lock:
+            if self.logged_in:
+                try:
+                    self.request("system?form=logout", operation="write")
+                except Exception:
+                    pass  # session may already be gone / router rebooting
+            self.stok = ""
+            self.encryptor = None
 
     @property
     def logged_in(self) -> bool:
