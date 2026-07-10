@@ -525,7 +525,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         # Best-effort cleanup; must survive an impatient second Ctrl-C (e.g. during `watch`).
         try:
             client.logout()  # release the single admin session for the WebUI / next run
-        except BaseException:
+        except (Exception, KeyboardInterrupt):
             pass
         client.close()
 
