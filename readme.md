@@ -66,5 +66,5 @@ Example Claude Code config:
 
 ```sh
 uv sync --extra mcp    # dev tools (pytest) are in the default dependency group
-uv run pytest -q       # crypto tests run offline (incl. a live-captured ciphertext vector)
+uv run pytest -q       # crypto tests run offline (synthetic vectors only)
 ```
