@@ -44,7 +44,7 @@ One-shot commands:
 ```sh
 tplink clients          # connected devices with IP + MAC
 tplink status           # mode, WAN IP, uptime, CPU/mem, SSIDs
-tplink wifi             # SSID, password and on/off state per band
+tplink wifi             # SSID + on/off per band (passwords hidden; --reveal-secrets)
 tplink stats            # per-client wireless signal (dBm), PHY rate, band
 tplink ports            # physical ethernet port link status
 tplink dhcp             # DHCP leases
