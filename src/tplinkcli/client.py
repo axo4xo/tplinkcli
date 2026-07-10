@@ -417,6 +417,56 @@ class TplinkClient:
         cfg["disabled"] = "off" if enabled else "on"
         return self.request(f"wireless?form=guest_{band}", operation="write", params=cfg)
 
+    # -- advanced wireless (radio tuning + Wi-Fi 6 toggles) -----------------
+
+    def get_wireless_advanced(self, band: str = "2g") -> dict[str, Any]:
+        """Advanced radio settings: per-band tx power / MU-MIMO / airtime fairness, plus the
+        global Wi-Fi 6 toggles — OFDMA, TWT (Target Wake Time), Smart Connect band steering.
+        (Beacon interval / DTIM are not exposed by this firmware.)"""
+        spf = self.get_wifi_radio(band)
+        return {
+            "band": band,
+            "txpower": spf.get("txpower"),
+            "mu_mimo": spf.get("mu_mimo"),
+            "airtime_fairness": spf.get("airtime_fairness"),
+            "ofdma": self.request("wireless?form=ofdma").get("enable"),
+            "twt": self.request("wireless?form=twt").get("enable"),
+            "smart_connect": self.request("wireless?form=smart_connect").get("smart_enable"),
+        }
+
+    def set_wireless_advanced(
+        self,
+        band: str,
+        txpower: Optional[str] = None,
+        mu_mimo: Optional[bool] = None,
+        airtime_fairness: Optional[bool] = None,
+    ) -> Any:
+        """Set per-band tx power ('high'/'mid'/'low'), MU-MIMO, airtime fairness
+        (read-modify-write). Restarts the radio; clients on the band drop briefly."""
+        spf = self.get_wifi_radio(band)
+        if txpower is not None:
+            spf["txpower"] = str(txpower)
+        if mu_mimo is not None:
+            spf["mu_mimo"] = "on" if mu_mimo else "off"
+        if airtime_fairness is not None:
+            spf["airtime_fairness"] = "on" if airtime_fairness else "off"
+        return self.request(f"wireless?form=wireless_{band}", operation="write_spf", params=spf)
+
+    def set_ofdma(self, enabled: bool) -> Any:
+        """Enable/disable OFDMA (Wi-Fi 6 efficiency). Restarts the radios."""
+        return self.request("wireless?form=ofdma", operation="write", params={"enable": "on" if enabled else "off"})
+
+    def set_twt(self, enabled: bool) -> Any:
+        """Enable/disable Target Wake Time (Wi-Fi 6 power-save; eases iOS/phone battery drain).
+        Restarts the radios."""
+        return self.request("wireless?form=twt", operation="write", params={"enable": "on" if enabled else "off"})
+
+    def set_smart_connect(self, enabled: bool) -> Any:
+        """Enable/disable Smart Connect band steering (one SSID across bands). Restarts radios."""
+        return self.request(
+            "wireless?form=smart_connect", operation="write", params={"smart_enable": "on" if enabled else "off"}
+        )
+
     # -- session introspection / whole-state snapshot -----------------------
 
     def session_info(self) -> dict[str, Any]:

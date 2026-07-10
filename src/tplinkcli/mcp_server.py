@@ -242,6 +242,59 @@ def set_guest_network(band: str, enabled: bool) -> str:
 
 
 @mcp.tool()
+def get_wireless_advanced(band: str = "2g") -> dict[str, Any]:
+    """Advanced radio settings: per-band tx power / MU-MIMO / airtime fairness, plus the
+    global Wi-Fi 6 toggles OFDMA, TWT (Target Wake Time — helps phone battery/power-save),
+    and Smart Connect band steering. (Beacon interval / DTIM aren't exposed by this firmware.)"""
+    return _call(lambda c: c.get_wireless_advanced(band))
+
+
+@mcp.tool()
+def set_wireless_advanced(
+    band: str,
+    txpower: Optional[str] = None,
+    mu_mimo: Optional[bool] = None,
+    airtime_fairness: Optional[bool] = None,
+    confirm: bool = False,
+) -> str:
+    """Set per-band tx power ('high'/'mid'/'low'), MU-MIMO, and/or airtime fairness.
+    ⚠️ Restarts the radio; clients on the band drop briefly. Requires confirm=True."""
+    if not confirm:
+        return "refused: this restarts the radio and briefly drops clients. Call with confirm=True."
+    _call(lambda c: c.set_wireless_advanced(band, txpower=txpower, mu_mimo=mu_mimo, airtime_fairness=airtime_fairness))
+    return f"advanced wireless settings for {band} updated"
+
+
+@mcp.tool()
+def set_ofdma(enabled: bool, confirm: bool = False) -> str:
+    """Enable/disable OFDMA (Wi-Fi 6). ⚠️ Restarts the radios; clients drop briefly. confirm=True."""
+    if not confirm:
+        return "refused: restarts the radios and briefly drops clients. Call with confirm=True."
+    _call(lambda c: c.set_ofdma(enabled))
+    return f"ofdma set to {'on' if enabled else 'off'}"
+
+
+@mcp.tool()
+def set_twt(enabled: bool, confirm: bool = False) -> str:
+    """Enable/disable Target Wake Time (Wi-Fi 6 power-save; eases iOS/phone battery drain).
+    ⚠️ Restarts the radios; clients drop briefly. Requires confirm=True."""
+    if not confirm:
+        return "refused: restarts the radios and briefly drops clients. Call with confirm=True."
+    _call(lambda c: c.set_twt(enabled))
+    return f"twt set to {'on' if enabled else 'off'}"
+
+
+@mcp.tool()
+def set_smart_connect(enabled: bool, confirm: bool = False) -> str:
+    """Enable/disable Smart Connect band steering (single SSID across bands).
+    ⚠️ Restarts the radios; clients drop briefly. Requires confirm=True."""
+    if not confirm:
+        return "refused: restarts the radios and briefly drops clients. Call with confirm=True."
+    _call(lambda c: c.set_smart_connect(enabled))
+    return f"smart_connect set to {'on' if enabled else 'off'}"
+
+
+@mcp.tool()
 def session_info() -> dict[str, Any]:
     """Session observability: age_seconds, login_count, stok_prefix — lets you see the
     auto-recovery (re-login) happen instead of trusting it silently."""

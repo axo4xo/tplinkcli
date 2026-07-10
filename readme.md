@@ -52,6 +52,7 @@ tplink dhcp-config      # DHCP server pool / lease time / DNS
 tplink reservations     # DHCP address reservations
 tplink syslog --level ERROR --limit 50   # system log (DHCP/SAE/DFS events)
 tplink radio 5g         # radio settings for a band (channel, width, security)
+tplink wifi-adv 5g      # advanced: tx power, MU-MIMO, OFDMA, TWT, band steering
 tplink firmware         # firmware/hardware version + cloud update check
 tplink wan              # WAN/internet status (JSON)
 tplink session          # session age / login count

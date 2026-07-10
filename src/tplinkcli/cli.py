@@ -256,6 +256,16 @@ def cmd_radio(client: TplinkClient, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_wifi_adv(client: TplinkClient, args: argparse.Namespace) -> int:
+    adv = client.get_wireless_advanced(args.band)
+    if args.json:
+        print(json.dumps(adv, indent=2))
+        return 0
+    for k in ("band", "txpower", "mu_mimo", "airtime_fairness", "ofdma", "twt", "smart_connect"):
+        print(f"{k:18} {adv.get(k)}")
+    return 0
+
+
 def cmd_firmware(client: TplinkClient, args: argparse.Namespace) -> int:
     fw = client.get_firmware_info()
     update = client.check_firmware_update()
@@ -318,6 +328,8 @@ def _register_commands(sub: "argparse._SubParsersAction") -> None:
     add("dhcp-config", cmd_dhcp_config, "DHCP server config (pool, lease time, DNS)")
     radio = add("radio", cmd_radio, "wireless radio settings for a band")
     radio.add_argument("band", nargs="?", default="2g", help="2g / 5g / 5g_2 / 6g (default 2g)")
+    wifiadv = add("wifi-adv", cmd_wifi_adv, "advanced wireless: tx power, MU-MIMO, OFDMA, TWT")
+    wifiadv.add_argument("band", nargs="?", default="2g", help="2g / 5g / 5g_2 / 6g (default 2g)")
     add("firmware", cmd_firmware, "firmware/hardware version + cloud update check")
     add("session", cmd_session, "session age / login count (recovery observability)")
     dump = add("dump", cmd_dump, "full-state JSON snapshot (config-drift diffing)")
