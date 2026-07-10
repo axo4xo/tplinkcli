@@ -45,6 +45,11 @@ def _call(fn):
             return fn(_get_client())
         except AuthError:
             print("tplink-mcp: session expired/taken over — re-logging in and retrying", file=sys.stderr)
+            if _client is not None:
+                try:
+                    _client.logout()
+                finally:
+                    _client.close()
             _client = None
             return fn(_get_client())
 
