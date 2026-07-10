@@ -6,7 +6,7 @@ A CLI + MCP tool for TP-Link Archer/AX routers, so you can manage the router fro
 
 ## Install
 
-With [uv](https://docs.astral.sh/uv/), install it as a global tool — puts `tplink` and
+With [uv](https://docs.astral.sh/uv/), install it as a global tool - puts `tplink` and
 `tplink-mcp` on your PATH:
 
 ```sh
