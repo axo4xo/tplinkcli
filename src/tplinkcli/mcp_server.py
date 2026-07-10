@@ -10,7 +10,7 @@ import sys
 import threading
 from typing import Any, Optional
 
-from .client import AuthError, TplinkClient
+from .client import AuthError, TplinkClient, redact_secrets
 from .config import Config
 
 try:
@@ -54,24 +54,9 @@ def _call(fn):
             return fn(_get_client())
 
 
-_SECRET_HINT = ("psk", "password", "pwd", "wpa_key", "wep_key", "portal_password", "_key")
-
-
 def _redact(obj: Any, reveal: bool) -> Any:
-    """Mask Wi-Fi PSKs / passwords by default so they don't land in agent transcripts."""
-    if reveal:
-        return obj
-    if isinstance(obj, dict):
-        out = {}
-        for k, v in obj.items():
-            if any(h in k.lower() for h in _SECRET_HINT) and isinstance(v, str) and v:
-                out[k] = "***redacted*** (call with reveal_secrets=true)"
-            else:
-                out[k] = _redact(v, reveal)
-        return out
-    if isinstance(obj, list):
-        return [_redact(x, reveal) for x in obj]
-    return obj
+    """Mask Wi-Fi PSKs / passwords so they don't land in agent transcripts."""
+    return redact_secrets(obj, reveal=reveal)
 
 
 @mcp.tool()

@@ -259,7 +259,7 @@ def cmd_session(client: TplinkClient, args: argparse.Namespace) -> int:
 
 
 def cmd_dump(client: TplinkClient, args: argparse.Namespace) -> int:
-    snapshot = client.dump()
+    snapshot = client.dump(reveal_secrets=args.reveal_secrets)
     text = json.dumps(snapshot, indent=2)
     if args.output:
         with open(args.output, "w") as f:
@@ -305,6 +305,7 @@ def _register_commands(sub: "argparse._SubParsersAction") -> None:
     add("session", cmd_session, "session age / login count (recovery observability)")
     dump = add("dump", cmd_dump, "full-state JSON snapshot (config-drift diffing)")
     dump.add_argument("-o", "--output", help="write snapshot to a file instead of stdout")
+    dump.add_argument("--reveal-secrets", action="store_true", help="include Wi-Fi passwords (redacted by default)")
 
 
 def build_parser() -> argparse.ArgumentParser:

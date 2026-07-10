@@ -419,15 +419,19 @@ def get_wifi_radio(self, band: str) -> dict[str, Any]:
             "login_count": self._login_count,
         }
 
-    def dump(self) -> dict[str, Any]:
-        """One full-state snapshot for config-drift / before-after diffing."""
+    def dump(self, reveal_secrets: bool = False) -> dict[str, Any]:
+        """One full-state snapshot for config-drift / before-after diffing.
+
+        Wi-Fi PSKs and WEP keys (in ``wifi``/``radios``) are redacted by default, since this
+        is meant to be written to a file — pass ``reveal_secrets=True`` to include them.
+        """
         radios: dict[str, Any] = {}
         for band in self.WIFI_BANDS:
             try:
                 radios[band] = self.get_wifi_radio(band)
             except TplinkError:
                 continue
-        return {
+        snapshot = {
             "sysmode": self.get_sysmode(),
             "status": self.get_status_all(),
             "clients": self.get_clients(),
@@ -440,6 +444,7 @@ def get_wifi_radio(self, band: str) -> dict[str, Any]:
             "ethernet_ports": self.get_ethernet_ports(),
             "wps": self.get_wps(),
         }
+        return redact_secrets(snapshot, reveal=reveal_secrets)
 
     def reboot(self) -> Any:
         """Reboot the router (operation write)."""
@@ -496,3 +501,28 @@ def _is_conflict(decoded: dict[str, Any]) -> bool:
     """Whether a failed login was due to another active admin session (retry with confirm)."""
     blob = json.dumps(decoded).lower()
     return "conflict" in blob or "logined_user" in blob or "login_status" in blob
+
+
+_SECRET_KEY_HINTS = ("psk", "password", "pwd", "wpa_key", "wep_key", "portal_password", "_key")
+_REDACTED = "***redacted*** (reveal_secrets=true to show)"
+
+
+def redact_secrets(obj: Any, reveal: bool = False) -> Any:
+    """Recursively mask Wi-Fi PSKs / passwords / WEP keys in a value.
+
+    Used before anything lands in a file (``dump``) or an agent transcript (MCP tools).
+    Pass ``reveal=True`` to return the value unchanged.
+    """
+    if reveal:
+        return obj
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            if any(h in k.lower() for h in _SECRET_KEY_HINTS) and isinstance(v, str) and v:
+                out[k] = _REDACTED
+            else:
+                out[k] = redact_secrets(v)
+        return out
+    if isinstance(obj, list):
+        return [redact_secrets(x) for x in obj]
+    return obj
