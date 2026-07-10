@@ -83,7 +83,7 @@ def set_wifi_band(band: str, enabled: bool) -> str:
 def raw_request(form_path: str, operation: str = "read", params: Optional[dict[str, Any]] = None) -> Any:
     """Call any router endpoint, e.g. form_path='status?form=client_status', operation='load'.
 
-    See reference/api-catalog.json for the full list of endpoints and operations.
+    This is an escape hatch; available endpoints and operations vary by model/firmware.
     """
     return _call(lambda c: c.request(form_path, operation=operation, params=params))
 
