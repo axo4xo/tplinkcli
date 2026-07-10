@@ -263,6 +263,16 @@ class TplinkClient:
         data = self.request("dhcps?form=client", operation="load")
         return data if isinstance(data, list) else data.get("clients", [])
 
+    # -- firmware -----------------------------------------------------------
+
+    def get_firmware_info(self) -> dict[str, Any]:
+        """Current firmware/hardware version and model (from firmware?form=upgrade read)."""
+        return self.request("firmware?form=upgrade", operation="read")
+
+    def check_firmware_update(self) -> dict[str, Any]:
+        """Ask the TP-Link cloud whether a newer firmware is available."""
+        return self.request("cloud_account?form=check_upgrade", operation="read")
+
     # -- syslog -------------------------------------------------------------
 
     def get_syslog(

@@ -85,9 +85,12 @@ def _fmt_uptime(seconds: Any) -> str:
 def cmd_status(client: TplinkClient, args: argparse.Namespace) -> int:
     mode = client.get_sysmode()
     alld = client.get_status_all()
+    fw = client.get_firmware_info()
     if args.json:
-        print(json.dumps({"sysmode": mode, "status": alld}, indent=2))
+        print(json.dumps({"firmware": fw, "sysmode": mode, "status": alld}, indent=2))
         return 0
+    print(f"model:     {fw.get('model', '?')} ({fw.get('hardware_version', '?')})")
+    print(f"firmware:  {fw.get('firmware_version', '?')}")
     print(f"mode:      {mode.get('mode', '?')}")
     print(f"wan ip:    {alld.get('wan_ipv4_ipaddr', '?')}")
     print(f"uptime:    {_fmt_uptime(alld.get('wan_ipv4_uptime'))}")
@@ -253,6 +256,19 @@ def cmd_radio(client: TplinkClient, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_firmware(client: TplinkClient, args: argparse.Namespace) -> int:
+    fw = client.get_firmware_info()
+    update = client.check_firmware_update()
+    if args.json:
+        print(json.dumps({"current": fw, "update": update}, indent=2))
+        return 0
+    print(f"model:    {fw.get('model', '?')} ({fw.get('hardware_version', '?')})")
+    print(f"firmware: {fw.get('firmware_version', '?')}")
+    n = str(update.get("update_number", "0"))
+    print(f"updates:  {'up to date' if n in ('0', '') else n + ' available'}")
+    return 0
+
+
 def cmd_session(client: TplinkClient, args: argparse.Namespace) -> int:
     print(json.dumps(client.session_info(), indent=2))
     return 0
@@ -302,6 +318,7 @@ def _register_commands(sub: "argparse._SubParsersAction") -> None:
     add("dhcp-config", cmd_dhcp_config, "DHCP server config (pool, lease time, DNS)")
     radio = add("radio", cmd_radio, "wireless radio settings for a band")
     radio.add_argument("band", nargs="?", default="2g", help="2g / 5g / 5g_2 / 6g (default 2g)")
+    add("firmware", cmd_firmware, "firmware/hardware version + cloud update check")
     add("session", cmd_session, "session age / login count (recovery observability)")
     dump = add("dump", cmd_dump, "full-state JSON snapshot (config-drift diffing)")
     dump.add_argument("-o", "--output", help="write snapshot to a file instead of stdout")

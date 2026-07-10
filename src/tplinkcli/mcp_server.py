@@ -67,12 +67,27 @@ def list_clients() -> dict[str, list[dict[str, Any]]]:
 
 @mcp.tool()
 def router_status(reveal_secrets: bool = False) -> dict[str, Any]:
-    """Router overview: operation mode, WAN IP, uptime, CPU/memory usage, SSIDs.
-
-    Wi-Fi PSKs in the status blob are redacted unless reveal_secrets=True.
+    """Router overview: firmware/hardware version, operation mode, WAN IP, uptime,
+    CPU/memory usage, SSIDs. Wi-Fi PSKs are redacted unless reveal_secrets=True.
     """
-    data = _call(lambda c: {"sysmode": c.get_sysmode(), "status": c.get_status_all()})
+    data = _call(lambda c: {
+        "firmware": c.get_firmware_info(),
+        "sysmode": c.get_sysmode(),
+        "status": c.get_status_all(),
+    })
     return _redact(data, reveal_secrets)
+
+
+@mcp.tool()
+def get_firmware_info() -> dict[str, Any]:
+    """Current firmware version, hardware version, and model."""
+    return _call(lambda c: c.get_firmware_info())
+
+
+@mcp.tool()
+def check_firmware_update() -> dict[str, Any]:
+    """Ask the TP-Link cloud whether a firmware update is available (update_number>0 = yes)."""
+    return _call(lambda c: c.check_firmware_update())
 
 
 @mcp.tool()
