@@ -321,6 +321,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 130
     finally:
         client.logout()  # release the single admin session for the WebUI / next run
+        client.close()
 
 
 if __name__ == "__main__":
