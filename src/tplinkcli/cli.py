@@ -21,7 +21,7 @@ import shlex
 import sys
 from typing import Any, Optional
 
-from .client import AuthError, TplinkClient, TplinkError
+from .client import AuthError, TplinkClient, TplinkError, redact_secrets
 from .config import Config, ConfigError
 
 
@@ -87,7 +87,8 @@ def cmd_status(client: TplinkClient, args: argparse.Namespace) -> int:
     alld = client.get_status_all()
     fw = client.get_firmware_info()
     if args.json:
-        print(json.dumps({"firmware": fw, "sysmode": mode, "status": alld}, indent=2))
+        blob = {"firmware": fw, "sysmode": mode, "status": alld}
+        print(json.dumps(redact_secrets(blob, reveal=args.reveal_secrets), indent=2))
         return 0
     print(f"model:     {fw.get('model', '?')} ({fw.get('hardware_version', '?')})")
     print(f"firmware:  {fw.get('firmware_version', '?')}")
@@ -116,20 +117,23 @@ def cmd_wan(client: TplinkClient, args: argparse.Namespace) -> int:
 
 def cmd_wifi(client: TplinkClient, args: argparse.Namespace) -> int:
     bands = client.get_wifi()
+    reveal = args.reveal_secrets
     if args.json:
-        print(json.dumps(bands, indent=2))
+        print(json.dumps(redact_secrets(bands, reveal=reveal), indent=2))
         return 0
     rows = [
         {
             "band": b["band"],
             "ssid": b["ssid"],
-            "password": b["password"] or "",
+            "password": (b["password"] or "") if reveal else "********",
             "state": "on" if b["enabled"] else "off",
             "security": b["security"] or "",
         }
         for b in bands
     ]
     _print_table(rows, ["band", "ssid", "password", "state", "security"])
+    if not reveal:
+        print("\n(passwords hidden — use --reveal-secrets to show)")
     return 0
 
 
@@ -248,7 +252,7 @@ def cmd_dhcp_config(client: TplinkClient, args: argparse.Namespace) -> int:
 def cmd_radio(client: TplinkClient, args: argparse.Namespace) -> int:
     radio = client.get_wifi_radio(args.band)
     if args.json:
-        print(json.dumps(radio, indent=2))
+        print(json.dumps(redact_secrets(radio, reveal=args.reveal_secrets), indent=2))
         return 0
     keys = ["ssid", "channel", "current_channel", "htmode", "hwmode", "encryption", "txpower", "mu_mimo", "airtime_fairness", "hidden"]
     for k in keys:
@@ -381,10 +385,12 @@ def _register_commands(sub: "argparse._SubParsersAction") -> None:
 
     add("login", cmd_login, "log in and print the session token")
     add("clients", cmd_clients, "list connected devices")
-    add("status", cmd_status, "router + WAN overview")
+    status = add("status", cmd_status, "router + WAN overview")
+    status.add_argument("--reveal-secrets", action="store_true", help="show Wi-Fi PSKs (hidden by default)")
     add("wan", cmd_wan, "WAN/internet status (JSON)")
     add("ipv6", cmd_ipv6, "IPv6 WAN + LAN status")
-    add("wifi", cmd_wifi, "list SSIDs, passwords and on/off state per band")
+    wifi = add("wifi", cmd_wifi, "list SSIDs and on/off state per band (passwords hidden)")
+    wifi.add_argument("--reveal-secrets", action="store_true", help="show Wi-Fi passwords (hidden by default)")
     add("ports", cmd_ports, "physical ethernet port link status")
     add("dhcp", cmd_dhcp, "DHCP lease list")
     watch = add("watch", cmd_watch, "poll clients|leases and print join/leave/change diffs")
@@ -406,6 +412,7 @@ def _register_commands(sub: "argparse._SubParsersAction") -> None:
     add("dhcp-config", cmd_dhcp_config, "DHCP server config (pool, lease time, DNS)")
     radio = add("radio", cmd_radio, "wireless radio settings for a band")
     radio.add_argument("band", nargs="?", default="2g", help="2g / 5g / 5g_2 / 6g (default 2g)")
+    radio.add_argument("--reveal-secrets", action="store_true", help="show PSK in --json (hidden by default)")
     wifiadv = add("wifi-adv", cmd_wifi_adv, "advanced wireless: tx power, MU-MIMO, OFDMA, TWT")
     wifiadv.add_argument("band", nargs="?", default="2g", help="2g / 5g / 5g_2 / 6g (default 2g)")
     add("firmware", cmd_firmware, "firmware/hardware version + cloud update check")
