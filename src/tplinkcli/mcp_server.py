@@ -245,8 +245,8 @@ def raw_request(form_path: str, operation: str = "read", params: Optional[dict[s
 
 @mcp.tool()
 def list_endpoints(contains: Optional[str] = None) -> list[dict[str, Any]]:
-    """Known API endpoints for raw_request: [{path, operations, purpose, read_safe}].
-    Optionally filter to paths/purposes containing a substring (e.g. 'dhcp', 'wireless')."""
+    """Known API endpoints for raw_request: [{form_path, operations, purpose, read_safe}].
+    Optionally filter to form paths/purposes containing a substring (e.g. 'dhcp', 'wireless')."""
     import json
     from pathlib import Path
 
