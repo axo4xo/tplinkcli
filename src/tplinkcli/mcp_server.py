@@ -129,12 +129,19 @@ def set_dhcp_settings(
     changes: dict[str, Any] = {}
     if leasetime is not None:
         changes["leasetime"] = leasetime
-    for k, v in (("ipaddr_start", ipaddr_start), ("ipaddr_end", ipaddr_end), ("gateway", gateway),
-                 ("pri_dns", pri_dns), ("snd_dns", snd_dns)):
+    for k, v in (
+        ("ipaddr_start", ipaddr_start),
+        ("ipaddr_end", ipaddr_end),
+        ("gateway", gateway),
+        ("pri_dns", pri_dns),
+        ("snd_dns", snd_dns),
+    ):
         if v is not None:
             changes[k] = v
     if enable is not None:
         changes["enable"] = "on" if enable else "off"
+    if not changes:
+        return "refused: no DHCP settings provided; pass at least one field to change."
     return _call(lambda c: c.set_dhcp_settings(**changes))
 
 
