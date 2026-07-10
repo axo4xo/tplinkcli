@@ -45,9 +45,16 @@ One-shot commands:
 tplink clients          # connected devices with IP + MAC
 tplink status           # mode, WAN IP, uptime, CPU/mem, SSIDs
 tplink wifi             # SSID, password and on/off state per band
+tplink stats            # per-client wireless signal (dBm), PHY rate, band
 tplink ports            # physical ethernet port link status
 tplink dhcp             # DHCP leases
+tplink dhcp-config      # DHCP server pool / lease time / DNS
+tplink reservations     # DHCP address reservations
+tplink syslog --level ERROR --limit 50   # system log (DHCP/SAE/DFS events)
+tplink radio 5g         # radio settings for a band (channel, width, security)
 tplink wan              # WAN/internet status (JSON)
+tplink session          # session age / login count
+tplink dump -o snap.json # full-state snapshot (config-drift diffing)
 tplink reboot           # reboot (asks to confirm; --yes to skip)
 
 tplink raw 'status?form=client_status' --op load --json  # call any endpoint directly
@@ -58,8 +65,12 @@ session. Add `--json` to most commands for machine-readable output.
 
 ## MCP server
 
-Exposes the router to an AI agent (`list_clients`, `router_status`, `wifi_info`,
-`dhcp_leases`, `ethernet_ports`, `set_wifi_band`, `raw_request`, `reboot_router`):
+Exposes the router to an AI agent — 24 tools including `get_syslog`, `get_client_stats`,
+`get_dhcp_settings`/`set_dhcp_settings`, `list_reservations`/`add_reservation`,
+`get_wifi_radio`/`set_wifi_channel`/`set_wifi_security`, `get_wps`/`set_wps`,
+`get_guest_network`/`set_guest_network`, `session_info`, `list_endpoints`, and `raw_request`.
+Wi-Fi passwords are redacted by default (`reveal_secrets=true` to opt in); radio-restarting
+writes require `confirm=true`.
 
 ```sh
 tplink-mcp

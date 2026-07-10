@@ -49,6 +49,23 @@ def test_logout_without_session_is_noop():
     assert not c.logged_in
 
 
+def test_redact_secrets_masks_dump_fields():
+    # dump() writes to a file, so wifi passwords + radio psk/wep keys must be masked.
+    from tplinkcli.client import redact_secrets
+
+    data = {
+        "wifi": [{"ssid": "Net", "password": "hunter2"}],
+        "radios": {"2g": {"channel": "6", "psk_key": "k", "wep_key1": "w"}},
+    }
+    red = redact_secrets(data)
+    assert red["wifi"][0]["ssid"] == "Net"
+    assert red["radios"]["2g"]["channel"] == "6"
+    assert "redact" in red["wifi"][0]["password"]
+    assert "redact" in red["radios"]["2g"]["psk_key"]
+    assert "redact" in red["radios"]["2g"]["wep_key1"]
+    assert redact_secrets(data, reveal=True) == data
+
+
 def test_concurrent_requests_are_serialized():
     # Concurrent callers (the MCP batch bug) must not overlap on the single session.
     import concurrent.futures as cf
