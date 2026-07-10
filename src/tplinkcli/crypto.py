@@ -1,6 +1,6 @@
 """Client-side crypto for TP-Link Archer/AX web API.
 
-Faithful port of the router's ``tpEncrypt.js`` + ``encrypt.js`` (see ``reference/``).
+Faithful port of the router's ``tpEncrypt.js`` + ``encrypt.js``.
 
 The scheme, per request:
 
