@@ -84,9 +84,17 @@ class TplinkClient:
         return payload.get("data", {})
 
     def _decode(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """A response is either plain JSON or {"data": "<base64>"} that we AES-decrypt."""
-        if isinstance(payload.get("data"), str) and self.encryptor is not None:
-            return json.loads(self.encryptor.decrypt_response(payload["data"]))
+        """A response is either plain JSON or {"data": "<base64>"} that we AES-decrypt.
+
+        A dead session (expired, or taken over by the WebUI/another client — the router
+        allows one admin at a time) answers with an empty ``data`` string. Surface that as
+        an AuthError so callers can re-login, instead of crashing in the AES un-pad.
+        """
+        data = payload.get("data")
+        if isinstance(data, str) and self.encryptor is not None:
+            if data == "":
+                raise AuthError("empty response — session expired or taken over by another admin")
+            return json.loads(self.encryptor.decrypt_response(data))
         return payload
 
     # -- login --------------------------------------------------------------
@@ -154,7 +162,13 @@ class TplinkClient:
         req = self.encryptor.encrypt_request(urlencode(body), is_login=False)
         r = self._post(f"/admin/{form_path}", req.as_form())
         r.raise_for_status()
-        decoded = self._decode(r.json())
+        if not r.text.strip():
+            raise AuthError(f"{form_path}: empty response body (HTTP {r.status_code}) — session likely invalid")
+        try:
+            payload = r.json()
+        except ValueError:
+            raise TplinkError(f"{form_path}: non-JSON response (HTTP {r.status_code}): {r.text[:120]!r}")
+        decoded = self._decode(payload)
         if not decoded.get("success", True):
             code = str(decoded.get("errorcode"))
             if code in {"-40401", "0", "timeout"} or "login" in code.lower():
@@ -225,6 +239,23 @@ class TplinkClient:
         """Reboot the router (operation write)."""
         return self.request("system?form=reboot", operation="write")
 
+    def logout(self) -> None:
+        """Release the admin session so another client (e.g. the WebUI) can log in.
+
+        Best-effort: if the session is already gone, there is nothing to release.
+        """
+        if self.logged_in:
+            try:
+                self.request("system?form=logout", operation="write")
+            except Exception:
+                pass  # session may already be gone / router rebooting
+        self.stok = ""
+        self.encryptor = None
+
+    @property
+    def logged_in(self) -> bool:
+        return bool(self.stok and self.encryptor is not None)
+
     def set_wireless_enabled(self, band: str, enabled: bool) -> Any:
         """Turn a wireless band's host network on or off (operation write)."""
         return self.request(
@@ -241,6 +272,7 @@ class TplinkClient:
         return self
 
     def __exit__(self, *exc: object) -> None:
+        self.logout()
         self.close()
 
 
