@@ -348,9 +348,14 @@ class TplinkClient:
 
     # -- wireless radio (channel / security / advanced) ---------------------
 
-    def get_wifi_radio(self, band: str) -> dict[str, Any]:
-        """Full radio settings for a band: ssid, channel, htmode, encryption, txpower, etc."""
-        return self.request(f"wireless?form=wireless_{band}", operation="read_spf")
+def get_wifi_radio(self, band: str) -> dict[str, Any]:
+    """Full radio settings for a band: ssid, channel, htmode, encryption, txpower, etc."""
+    form = f"wireless?form=wireless_{band}"
+    try:
+        return self.request(form, operation="read_spf")
+    except TplinkError:
+        # Some firmwares (notably 6 GHz) expose only `read` for this form.
+        return self.request(form, operation="read")
 
     def set_wifi_channel(self, band: str, channel: Any, htmode: Optional[str] = None) -> Any:
         """Set the channel (and optionally HT/VHT width) for a band (read-modify-write).
