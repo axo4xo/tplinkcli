@@ -1,6 +1,6 @@
 """Configuration loading (low → high precedence):
 
-    user config (~/.config/tplink/.env) < project .env < $TPLINK_ENV < env vars < args
+    user config (~/.config/tplink/.env or ~/.tplink.env) < project .env < $TPLINK_ENV < env vars < args
 
 Only three settings matter: the router host, the username (almost always ``admin``),
 and the password. Kept out of the code and git via ``.env`` (see ``.env.example``).
