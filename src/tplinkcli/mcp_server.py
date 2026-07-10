@@ -243,9 +243,10 @@ def set_guest_network(band: str, enabled: bool) -> str:
 
 @mcp.tool()
 def get_wireless_advanced(band: str = "2g") -> dict[str, Any]:
-    """Advanced radio settings: per-band tx power / MU-MIMO / airtime fairness, plus the
-    global Wi-Fi 6 toggles OFDMA, TWT (Target Wake Time — helps phone battery/power-save),
-    and Smart Connect band steering. (Beacon interval / DTIM aren't exposed by this firmware.)"""
+    """Advanced radio settings ("Additional Settings"): tx power, MU-MIMO, WMM, AP isolation,
+    airtime fairness, short GI, beacon interval, DTIM, RTS/fragmentation threshold, group-key
+    update, plus the Wi-Fi 6 toggles OFDMA, TWT (Target Wake Time — phone power-save), and
+    Smart Connect band steering."""
     return _call(lambda c: c.get_wireless_advanced(band))
 
 
@@ -292,6 +293,36 @@ def set_smart_connect(enabled: bool, confirm: bool = False) -> str:
         return "refused: restarts the radios and briefly drops clients. Call with confirm=True."
     _call(lambda c: c.set_smart_connect(enabled))
     return f"smart_connect set to {'on' if enabled else 'off'}"
+
+
+@mcp.tool()
+def set_wireless_syspara(
+    band: str,
+    wmm: Optional[bool] = None,
+    ap_isolation: Optional[bool] = None,
+    beacon_interval: Optional[int] = None,
+    dtim: Optional[int] = None,
+    rts_threshold: Optional[int] = None,
+    frag_threshold: Optional[int] = None,
+    group_key_update: Optional[int] = None,
+    confirm: bool = False,
+) -> str:
+    """Set the advanced radio parameters for a band — WMM, AP isolation, beacon interval,
+    DTIM period, RTS/fragmentation threshold, group-key update interval. ⚠️ Restarts the
+    radio; clients on the band drop briefly. Requires confirm=True."""
+    if not confirm:
+        return "refused: this restarts the radio and briefly drops clients. Call with confirm=True."
+    _call(lambda c: c.set_wireless_syspara(
+        band, wmm=wmm, ap_isolation=ap_isolation, beacon_interval=beacon_interval, dtim=dtim,
+        rts_threshold=rts_threshold, frag_threshold=frag_threshold, group_key_update=group_key_update,
+    ))
+    return f"advanced radio parameters for {band} updated"
+
+
+@mcp.tool()
+def get_ipv6_status() -> dict[str, Any]:
+    """IPv6 WAN + LAN status: connection type/enable, LAN address & prefix, DNS, assign type."""
+    return _call(lambda c: c.get_ipv6_status())
 
 
 @mcp.tool()

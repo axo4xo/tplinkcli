@@ -217,11 +217,12 @@ def cmd_stats(client: TplinkClient, args: argparse.Namespace) -> int:
             "signal": f"{s['signal_dbm']} dBm" if s.get("signal_dbm") is not None else "",
             "tx": f"{s['tx_rate_kbps'] // 1000}M" if s.get("tx_rate_kbps") else "",
             "rx": f"{s['rx_rate_kbps'] // 1000}M" if s.get("rx_rate_kbps") else "",
+            "online": _fmt_uptime(s.get("online_seconds")),
             "mac": s.get("mac", ""),
         }
         for s in stats
     ]
-    _print_table(rows, ["name", "band", "signal", "tx", "rx", "mac"])
+    _print_table(rows, ["name", "band", "signal", "tx", "rx", "online", "mac"])
     return 0
 
 
@@ -261,8 +262,13 @@ def cmd_wifi_adv(client: TplinkClient, args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(adv, indent=2))
         return 0
-    for k in ("band", "txpower", "mu_mimo", "airtime_fairness", "ofdma", "twt", "smart_connect"):
-        print(f"{k:18} {adv.get(k)}")
+    for k, v in adv.items():
+        print(f"{k:18} {v}")
+    return 0
+
+
+def cmd_ipv6(client: TplinkClient, args: argparse.Namespace) -> int:
+    print(json.dumps(client.get_ipv6_status(), indent=2))
     return 0
 
 
@@ -309,6 +315,7 @@ def _register_commands(sub: "argparse._SubParsersAction") -> None:
     add("clients", cmd_clients, "list connected devices")
     add("status", cmd_status, "router + WAN overview")
     add("wan", cmd_wan, "WAN/internet status (JSON)")
+    add("ipv6", cmd_ipv6, "IPv6 WAN + LAN status")
     add("wifi", cmd_wifi, "list SSIDs, passwords and on/off state per band")
     add("ports", cmd_ports, "physical ethernet port link status")
     add("dhcp", cmd_dhcp, "DHCP lease list")

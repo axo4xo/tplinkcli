@@ -42,3 +42,4 @@ def test_disruptive_writes_require_confirm():
     assert "confirm=True" in mcp_server.set_ofdma(False)
     assert "confirm=True" in mcp_server.set_twt(True)
     assert "confirm=True" in mcp_server.set_smart_connect(True)
+    assert "confirm=True" in mcp_server.set_wireless_syspara("2g", dtim=3)

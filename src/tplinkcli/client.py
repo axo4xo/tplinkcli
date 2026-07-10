@@ -218,6 +218,13 @@ class TplinkClient:
     def get_wan_status(self) -> dict[str, Any]:
         return self.request("network?form=wan_ipv4_status")
 
+    def get_ipv6_status(self) -> dict[str, Any]:
+        """IPv6 WAN + LAN status: connection type/enable, LAN address & prefix, DNS, assign type."""
+        return {
+            "wan": self.request("network?form=wan_ipv6_status"),
+            "lan": self.request("network?form=lan_ipv6"),
+        }
+
     def get_sysmode(self) -> dict[str, Any]:
         return self.request("system?form=sysmode")
 
@@ -420,19 +427,63 @@ class TplinkClient:
     # -- advanced wireless (radio tuning + Wi-Fi 6 toggles) -----------------
 
     def get_wireless_advanced(self, band: str = "2g") -> dict[str, Any]:
-        """Advanced radio settings: per-band tx power / MU-MIMO / airtime fairness, plus the
-        global Wi-Fi 6 toggles — OFDMA, TWT (Target Wake Time), Smart Connect band steering.
-        (Beacon interval / DTIM are not exposed by this firmware.)"""
+        """Advanced radio settings for a band (the GUI's "Additional Settings"):
+
+        per-band tx power / MU-MIMO (from write_spf), plus WMM, AP isolation, airtime
+        fairness, short GI, beacon interval, DTIM, RTS/fragmentation threshold, and group-key
+        update interval (from syspara), plus the global Wi-Fi 6 toggles OFDMA, TWT (Target
+        Wake Time), and Smart Connect band steering.
+        """
         spf = self.get_wifi_radio(band)
+        sp = self.request(f"wireless?form=syspara_{band}", operation="read")
         return {
             "band": band,
             "txpower": spf.get("txpower"),
             "mu_mimo": spf.get("mu_mimo"),
-            "airtime_fairness": spf.get("airtime_fairness"),
+            "airtime_fairness": sp.get("airtime_fairness"),
+            "wmm": sp.get("wmm"),
+            "ap_isolation": sp.get("isolate"),
+            "short_gi": sp.get("shortgi"),
+            "beacon_interval": sp.get("beacon_int"),
+            "dtim": sp.get("dtim_period"),
+            "rts_threshold": sp.get("rts"),
+            "frag_threshold": sp.get("frag"),
+            "group_key_update": sp.get("wpa_group_rekey"),
             "ofdma": self.request("wireless?form=ofdma").get("enable"),
             "twt": self.request("wireless?form=twt").get("enable"),
             "smart_connect": self.request("wireless?form=smart_connect").get("smart_enable"),
         }
+
+    def set_wireless_syspara(
+        self,
+        band: str,
+        wmm: Optional[bool] = None,
+        ap_isolation: Optional[bool] = None,
+        beacon_interval: Optional[int] = None,
+        dtim: Optional[int] = None,
+        rts_threshold: Optional[int] = None,
+        frag_threshold: Optional[int] = None,
+        group_key_update: Optional[int] = None,
+    ) -> Any:
+        """Set the advanced radio parameters — WMM, AP isolation, beacon interval, DTIM,
+        RTS/fragmentation threshold, group-key update interval (read-modify-write on
+        syspara). Restarts the radio; clients on the band drop briefly."""
+        sp = self.request(f"wireless?form=syspara_{band}", operation="read")
+        if wmm is not None:
+            sp["wmm"] = "on" if wmm else "off"
+        if ap_isolation is not None:
+            sp["isolate"] = "on" if ap_isolation else "off"
+        if beacon_interval is not None:
+            sp["beacon_int"] = str(beacon_interval)
+        if dtim is not None:
+            sp["dtim_period"] = str(dtim)
+        if rts_threshold is not None:
+            sp["rts"] = str(rts_threshold)
+        if frag_threshold is not None:
+            sp["frag"] = str(frag_threshold)
+        if group_key_update is not None:
+            sp["wpa_group_rekey"] = str(group_key_update)
+        return self.request(f"wireless?form=syspara_{band}", operation="write", params=sp)
 
     def set_wireless_advanced(
         self,
