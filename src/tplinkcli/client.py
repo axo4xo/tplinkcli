@@ -1,7 +1,7 @@
 """HTTP client for the TP-Link Archer/AX web API.
 
-Implements the real login handshake (reverse-engineered from ``modules/login`` — see
-CLAUDE.md) and the encrypted request/response envelope, then exposes typed helpers for
+Implements the real login handshake (reverse-engineered from the router's web UI JS)
+and the encrypted request/response envelope, then exposes typed helpers for
 the useful features. Everything runs over the router's self-signed HTTPS.
 """
 
