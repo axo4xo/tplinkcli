@@ -16,7 +16,7 @@ import urllib3
 
 from .crypto import AesCipher, RsaCipher, TpEncryptor
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# NOTE: Do not disable InsecureRequestWarning globally; callers may opt-in if desired.
 
 
 class TplinkError(Exception):
