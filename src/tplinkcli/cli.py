@@ -272,6 +272,66 @@ def cmd_ipv6(client: TplinkClient, args: argparse.Namespace) -> int:
     return 0
 
 
+# target -> how to fetch, key by, label, render, and which fields count as a "change"
+_WATCH_TARGETS = {
+    "clients": {
+        "fetch": lambda c: [d for grp in c.get_clients().values() for d in grp],
+        "key": lambda r: r.get("macaddr", ""),
+        "label": lambda r: r.get("hostname") or "?",
+        "cols": lambda r: f"{r.get('ipaddr',''):<15} {r.get('wire_type',''):<6} {r.get('macaddr','')}",
+        "fields": ("ipaddr", "wire_type"),
+    },
+    "leases": {
+        "fetch": lambda c: c.get_dhcp_leases(),
+        "key": lambda r: r.get("macaddr", ""),
+        "label": lambda r: r.get("name") or "?",
+        "cols": lambda r: f"{r.get('ipaddr',''):<15} {r.get('leasetime',''):<10} {r.get('macaddr','')}",
+        "fields": ("ipaddr",),
+    },
+}
+
+
+def cmd_watch(client: TplinkClient, args: argparse.Namespace) -> int:
+    import time
+
+    cfg = _WATCH_TARGETS[args.target]
+    interval = max(2, args.interval)
+
+    def line(sign: str, event: str, item: dict[str, Any], extra: str = "") -> None:
+        ts = time.strftime("%H:%M:%S")
+        print(f"[{ts}] {sign} {event:<7} {cfg['label'](item):<20} {cfg['cols'](item)}{extra}")
+
+    print(f"watching {args.target} every {interval}s — Ctrl-C to stop\n")
+    prev: dict[str, dict[str, Any]] = {}
+    first = True
+    try:
+        while True:
+            try:
+                items = cfg["fetch"](client)
+            except AuthError:
+                print("  (session expired — re-logging in)", file=sys.stderr)
+                client.login()
+                items = cfg["fetch"](client)
+            cur = {cfg["key"](r): r for r in items if cfg["key"](r)}
+            for k, item in cur.items():
+                if k not in prev:
+                    line("+", "present" if first else "join", item)
+                else:
+                    changed = [f for f in cfg["fields"] if prev[k].get(f) != item.get(f)]
+                    if changed:
+                        old = ", ".join(f"{f}: {prev[k].get(f)}->{item.get(f)}" for f in changed)
+                        line("~", "change", item, extra=f"   ({old})")
+            for k, item in prev.items():
+                if k not in cur:
+                    line("-", "leave", item)
+            prev = cur
+            first = False
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        print("\nstopped")
+    return 0
+
+
 def cmd_firmware(client: TplinkClient, args: argparse.Namespace) -> int:
     fw = client.get_firmware_info()
     update = client.check_firmware_update()
@@ -319,6 +379,9 @@ def _register_commands(sub: "argparse._SubParsersAction") -> None:
     add("wifi", cmd_wifi, "list SSIDs, passwords and on/off state per band")
     add("ports", cmd_ports, "physical ethernet port link status")
     add("dhcp", cmd_dhcp, "DHCP lease list")
+    watch = add("watch", cmd_watch, "poll clients|leases and print join/leave/change diffs")
+    watch.add_argument("target", nargs="?", default="clients", choices=["clients", "leases"])
+    watch.add_argument("-n", "--interval", type=int, default=5, help="poll seconds (min 2)")
     reboot = add("reboot", cmd_reboot, "reboot the router")
     reboot.add_argument("--yes", action="store_true", help="skip confirmation")
     raw = add("raw", cmd_raw, "call any endpoint: raw <module?form=x>")
@@ -451,7 +514,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     except KeyboardInterrupt:
         return 130
     finally:
-        client.logout()  # release the single admin session for the WebUI / next run
+        # Best-effort cleanup; must survive an impatient second Ctrl-C (e.g. during `watch`).
+        try:
+            client.logout()  # release the single admin session for the WebUI / next run
+        except BaseException:
+            pass
         client.close()
 
 

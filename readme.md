@@ -48,6 +48,7 @@ tplink wifi             # SSID, password and on/off state per band
 tplink stats            # per-client wireless signal (dBm), PHY rate, band
 tplink ports            # physical ethernet port link status
 tplink dhcp             # DHCP leases
+tplink watch clients    # live poll: print join/leave/IP-change diffs (Ctrl-C to stop)
 tplink dhcp-config      # DHCP server pool / lease time / DNS
 tplink reservations     # DHCP address reservations
 tplink syslog --level ERROR --limit 50   # system log (DHCP/SAE/DFS events)
