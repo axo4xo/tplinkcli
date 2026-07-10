@@ -98,6 +98,10 @@ def reboot_router(confirm: bool = False) -> str:
 
 
 def main() -> None:
+    # Self-signed router cert: silence the per-request warning at the app entry point.
+    import urllib3
+
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     mcp.run()
 
 
