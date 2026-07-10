@@ -85,9 +85,12 @@ def _fmt_uptime(seconds: Any) -> str:
 def cmd_status(client: TplinkClient, args: argparse.Namespace) -> int:
     mode = client.get_sysmode()
     alld = client.get_status_all()
+    fw = client.get_firmware_info()
     if args.json:
-        print(json.dumps({"sysmode": mode, "status": alld}, indent=2))
+        print(json.dumps({"firmware": fw, "sysmode": mode, "status": alld}, indent=2))
         return 0
+    print(f"model:     {fw.get('model', '?')} ({fw.get('hardware_version', '?')})")
+    print(f"firmware:  {fw.get('firmware_version', '?')}")
     print(f"mode:      {mode.get('mode', '?')}")
     print(f"wan ip:    {alld.get('wan_ipv4_ipaddr', '?')}")
     print(f"uptime:    {_fmt_uptime(alld.get('wan_ipv4_uptime'))}")
@@ -214,11 +217,12 @@ def cmd_stats(client: TplinkClient, args: argparse.Namespace) -> int:
             "signal": f"{s['signal_dbm']} dBm" if s.get("signal_dbm") is not None else "",
             "tx": f"{s['tx_rate_kbps'] // 1000}M" if s.get("tx_rate_kbps") else "",
             "rx": f"{s['rx_rate_kbps'] // 1000}M" if s.get("rx_rate_kbps") else "",
+            "online": _fmt_uptime(s.get("online_seconds")),
             "mac": s.get("mac", ""),
         }
         for s in stats
     ]
-    _print_table(rows, ["name", "band", "signal", "tx", "rx", "mac"])
+    _print_table(rows, ["name", "band", "signal", "tx", "rx", "online", "mac"])
     return 0
 
 
@@ -253,6 +257,34 @@ def cmd_radio(client: TplinkClient, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_wifi_adv(client: TplinkClient, args: argparse.Namespace) -> int:
+    adv = client.get_wireless_advanced(args.band)
+    if args.json:
+        print(json.dumps(adv, indent=2))
+        return 0
+    for k, v in adv.items():
+        print(f"{k:18} {v}")
+    return 0
+
+
+def cmd_ipv6(client: TplinkClient, args: argparse.Namespace) -> int:
+    print(json.dumps(client.get_ipv6_status(), indent=2))
+    return 0
+
+
+def cmd_firmware(client: TplinkClient, args: argparse.Namespace) -> int:
+    fw = client.get_firmware_info()
+    update = client.check_firmware_update()
+    if args.json:
+        print(json.dumps({"current": fw, "update": update}, indent=2))
+        return 0
+    print(f"model:    {fw.get('model', '?')} ({fw.get('hardware_version', '?')})")
+    print(f"firmware: {fw.get('firmware_version', '?')}")
+    n = str(update.get("update_number", "0"))
+    print(f"updates:  {'up to date' if n in ('0', '') else n + ' available'}")
+    return 0
+
+
 def cmd_session(client: TplinkClient, args: argparse.Namespace) -> int:
     print(json.dumps(client.session_info(), indent=2))
     return 0
@@ -283,6 +315,7 @@ def _register_commands(sub: "argparse._SubParsersAction") -> None:
     add("clients", cmd_clients, "list connected devices")
     add("status", cmd_status, "router + WAN overview")
     add("wan", cmd_wan, "WAN/internet status (JSON)")
+    add("ipv6", cmd_ipv6, "IPv6 WAN + LAN status")
     add("wifi", cmd_wifi, "list SSIDs, passwords and on/off state per band")
     add("ports", cmd_ports, "physical ethernet port link status")
     add("dhcp", cmd_dhcp, "DHCP lease list")
@@ -302,6 +335,9 @@ def _register_commands(sub: "argparse._SubParsersAction") -> None:
     add("dhcp-config", cmd_dhcp_config, "DHCP server config (pool, lease time, DNS)")
     radio = add("radio", cmd_radio, "wireless radio settings for a band")
     radio.add_argument("band", nargs="?", default="2g", help="2g / 5g / 5g_2 / 6g (default 2g)")
+    wifiadv = add("wifi-adv", cmd_wifi_adv, "advanced wireless: tx power, MU-MIMO, OFDMA, TWT")
+    wifiadv.add_argument("band", nargs="?", default="2g", help="2g / 5g / 5g_2 / 6g (default 2g)")
+    add("firmware", cmd_firmware, "firmware/hardware version + cloud update check")
     add("session", cmd_session, "session age / login count (recovery observability)")
     dump = add("dump", cmd_dump, "full-state JSON snapshot (config-drift diffing)")
     dump.add_argument("-o", "--output", help="write snapshot to a file instead of stdout")

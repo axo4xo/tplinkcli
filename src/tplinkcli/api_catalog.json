@@ -397,11 +397,15 @@
         "admin_module": "firmware",
         "form": "upgrade",
         "operations": [
+          "read",
           "fwup_check"
         ],
-        "purpose": "Query firmware upgrade progress percent (firmwareUpgradeProxy load and checkUpgradeStatusProxy poll)",
+        "purpose": "Read current firmware/hardware version and model (operation read); query firmware upgrade progress percent (fwup_check).",
         "read_safe": true,
         "notable_fields": [
+          "firmware_version",
+          "hardware_version",
+          "model",
           "percent",
           "errorcode",
           "upgradetime"

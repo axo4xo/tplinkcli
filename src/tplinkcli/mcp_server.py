@@ -67,12 +67,27 @@ def list_clients() -> dict[str, list[dict[str, Any]]]:
 
 @mcp.tool()
 def router_status(reveal_secrets: bool = False) -> dict[str, Any]:
-    """Router overview: operation mode, WAN IP, uptime, CPU/memory usage, SSIDs.
-
-    Wi-Fi PSKs in the status blob are redacted unless reveal_secrets=True.
+    """Router overview: firmware/hardware version, operation mode, WAN IP, uptime,
+    CPU/memory usage, SSIDs. Wi-Fi PSKs are redacted unless reveal_secrets=True.
     """
-    data = _call(lambda c: {"sysmode": c.get_sysmode(), "status": c.get_status_all()})
+    data = _call(lambda c: {
+        "firmware": c.get_firmware_info(),
+        "sysmode": c.get_sysmode(),
+        "status": c.get_status_all(),
+    })
     return _redact(data, reveal_secrets)
+
+
+@mcp.tool()
+def get_firmware_info() -> dict[str, Any]:
+    """Current firmware version, hardware version, and model."""
+    return _call(lambda c: c.get_firmware_info())
+
+
+@mcp.tool()
+def check_firmware_update() -> dict[str, Any]:
+    """Ask the TP-Link cloud whether a firmware update is available (update_number>0 = yes)."""
+    return _call(lambda c: c.check_firmware_update())
 
 
 @mcp.tool()
@@ -224,6 +239,90 @@ def set_guest_network(band: str, enabled: bool) -> str:
     """Turn a band's guest network on or off."""
     _call(lambda c: c.set_guest_network(band, enabled))
     return f"guest network {band} set to {'on' if enabled else 'off'}"
+
+
+@mcp.tool()
+def get_wireless_advanced(band: str = "2g") -> dict[str, Any]:
+    """Advanced radio settings ("Additional Settings"): tx power, MU-MIMO, WMM, AP isolation,
+    airtime fairness, short GI, beacon interval, DTIM, RTS/fragmentation threshold, group-key
+    update, plus the Wi-Fi 6 toggles OFDMA, TWT (Target Wake Time — phone power-save), and
+    Smart Connect band steering."""
+    return _call(lambda c: c.get_wireless_advanced(band))
+
+
+@mcp.tool()
+def set_wireless_advanced(
+    band: str,
+    txpower: Optional[str] = None,
+    mu_mimo: Optional[bool] = None,
+    airtime_fairness: Optional[bool] = None,
+    confirm: bool = False,
+) -> str:
+    """Set per-band tx power ('high'/'mid'/'low'), MU-MIMO, and/or airtime fairness.
+    ⚠️ Restarts the radio; clients on the band drop briefly. Requires confirm=True."""
+    if not confirm:
+        return "refused: this restarts the radio and briefly drops clients. Call with confirm=True."
+    _call(lambda c: c.set_wireless_advanced(band, txpower=txpower, mu_mimo=mu_mimo, airtime_fairness=airtime_fairness))
+    return f"advanced wireless settings for {band} updated"
+
+
+@mcp.tool()
+def set_ofdma(enabled: bool, confirm: bool = False) -> str:
+    """Enable/disable OFDMA (Wi-Fi 6). ⚠️ Restarts the radios; clients drop briefly. confirm=True."""
+    if not confirm:
+        return "refused: restarts the radios and briefly drops clients. Call with confirm=True."
+    _call(lambda c: c.set_ofdma(enabled))
+    return f"ofdma set to {'on' if enabled else 'off'}"
+
+
+@mcp.tool()
+def set_twt(enabled: bool, confirm: bool = False) -> str:
+    """Enable/disable Target Wake Time (Wi-Fi 6 power-save; eases iOS/phone battery drain).
+    ⚠️ Restarts the radios; clients drop briefly. Requires confirm=True."""
+    if not confirm:
+        return "refused: restarts the radios and briefly drops clients. Call with confirm=True."
+    _call(lambda c: c.set_twt(enabled))
+    return f"twt set to {'on' if enabled else 'off'}"
+
+
+@mcp.tool()
+def set_smart_connect(enabled: bool, confirm: bool = False) -> str:
+    """Enable/disable Smart Connect band steering (single SSID across bands).
+    ⚠️ Restarts the radios; clients drop briefly. Requires confirm=True."""
+    if not confirm:
+        return "refused: restarts the radios and briefly drops clients. Call with confirm=True."
+    _call(lambda c: c.set_smart_connect(enabled))
+    return f"smart_connect set to {'on' if enabled else 'off'}"
+
+
+@mcp.tool()
+def set_wireless_syspara(
+    band: str,
+    wmm: Optional[bool] = None,
+    ap_isolation: Optional[bool] = None,
+    beacon_interval: Optional[int] = None,
+    dtim: Optional[int] = None,
+    rts_threshold: Optional[int] = None,
+    frag_threshold: Optional[int] = None,
+    group_key_update: Optional[int] = None,
+    confirm: bool = False,
+) -> str:
+    """Set the advanced radio parameters for a band — WMM, AP isolation, beacon interval,
+    DTIM period, RTS/fragmentation threshold, group-key update interval. ⚠️ Restarts the
+    radio; clients on the band drop briefly. Requires confirm=True."""
+    if not confirm:
+        return "refused: this restarts the radio and briefly drops clients. Call with confirm=True."
+    _call(lambda c: c.set_wireless_syspara(
+        band, wmm=wmm, ap_isolation=ap_isolation, beacon_interval=beacon_interval, dtim=dtim,
+        rts_threshold=rts_threshold, frag_threshold=frag_threshold, group_key_update=group_key_update,
+    ))
+    return f"advanced radio parameters for {band} updated"
+
+
+@mcp.tool()
+def get_ipv6_status() -> dict[str, Any]:
+    """IPv6 WAN + LAN status: connection type/enable, LAN address & prefix, DNS, assign type."""
+    return _call(lambda c: c.get_ipv6_status())
 
 
 @mcp.tool()

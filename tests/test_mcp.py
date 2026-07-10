@@ -38,3 +38,8 @@ def test_disruptive_writes_require_confirm():
     assert "confirm=True" in mcp_server.set_wifi_channel("2g", "6")
     assert "confirm=True" in mcp_server.set_wifi_security("2g", "psk_sae")
     assert "confirm=True" in mcp_server.reboot_router()
+    assert "confirm=True" in mcp_server.set_wireless_advanced("2g", txpower="low")
+    assert "confirm=True" in mcp_server.set_ofdma(False)
+    assert "confirm=True" in mcp_server.set_twt(True)
+    assert "confirm=True" in mcp_server.set_smart_connect(True)
+    assert "confirm=True" in mcp_server.set_wireless_syspara("2g", dtim=3)

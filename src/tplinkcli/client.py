@@ -218,6 +218,13 @@ class TplinkClient:
     def get_wan_status(self) -> dict[str, Any]:
         return self.request("network?form=wan_ipv4_status")
 
+    def get_ipv6_status(self) -> dict[str, Any]:
+        """IPv6 WAN + LAN status: connection type/enable, LAN address & prefix, DNS, assign type."""
+        return {
+            "wan": self.request("network?form=wan_ipv6_status"),
+            "lan": self.request("network?form=lan_ipv6"),
+        }
+
     def get_sysmode(self) -> dict[str, Any]:
         return self.request("system?form=sysmode")
 
@@ -262,6 +269,16 @@ class TplinkClient:
     def get_dhcp_leases(self) -> list[dict[str, Any]]:
         data = self.request("dhcps?form=client", operation="load")
         return data if isinstance(data, list) else data.get("clients", [])
+
+    # -- firmware -----------------------------------------------------------
+
+    def get_firmware_info(self) -> dict[str, Any]:
+        """Current firmware/hardware version and model (from firmware?form=upgrade read)."""
+        return self.request("firmware?form=upgrade", operation="read")
+
+    def check_firmware_update(self) -> dict[str, Any]:
+        """Ask the TP-Link cloud whether a newer firmware is available."""
+        return self.request("cloud_account?form=check_upgrade", operation="read")
 
     # -- syslog -------------------------------------------------------------
 
@@ -406,6 +423,100 @@ class TplinkClient:
         cfg["enable"] = "on" if enabled else "off"
         cfg["disabled"] = "off" if enabled else "on"
         return self.request(f"wireless?form=guest_{band}", operation="write", params=cfg)
+
+    # -- advanced wireless (radio tuning + Wi-Fi 6 toggles) -----------------
+
+    def get_wireless_advanced(self, band: str = "2g") -> dict[str, Any]:
+        """Advanced radio settings for a band (the GUI's "Additional Settings"):
+
+        per-band tx power / MU-MIMO (from write_spf), plus WMM, AP isolation, airtime
+        fairness, short GI, beacon interval, DTIM, RTS/fragmentation threshold, and group-key
+        update interval (from syspara), plus the global Wi-Fi 6 toggles OFDMA, TWT (Target
+        Wake Time), and Smart Connect band steering.
+        """
+        spf = self.get_wifi_radio(band)
+        sp = self.request(f"wireless?form=syspara_{band}", operation="read")
+        return {
+            "band": band,
+            "txpower": spf.get("txpower"),
+            "mu_mimo": spf.get("mu_mimo"),
+            "airtime_fairness": sp.get("airtime_fairness"),
+            "wmm": sp.get("wmm"),
+            "ap_isolation": sp.get("isolate"),
+            "short_gi": sp.get("shortgi"),
+            "beacon_interval": sp.get("beacon_int"),
+            "dtim": sp.get("dtim_period"),
+            "rts_threshold": sp.get("rts"),
+            "frag_threshold": sp.get("frag"),
+            "group_key_update": sp.get("wpa_group_rekey"),
+            "ofdma": self.request("wireless?form=ofdma").get("enable"),
+            "twt": self.request("wireless?form=twt").get("enable"),
+            "smart_connect": self.request("wireless?form=smart_connect").get("smart_enable"),
+        }
+
+    def set_wireless_syspara(
+        self,
+        band: str,
+        wmm: Optional[bool] = None,
+        ap_isolation: Optional[bool] = None,
+        beacon_interval: Optional[int] = None,
+        dtim: Optional[int] = None,
+        rts_threshold: Optional[int] = None,
+        frag_threshold: Optional[int] = None,
+        group_key_update: Optional[int] = None,
+    ) -> Any:
+        """Set the advanced radio parameters — WMM, AP isolation, beacon interval, DTIM,
+        RTS/fragmentation threshold, group-key update interval (read-modify-write on
+        syspara). Restarts the radio; clients on the band drop briefly."""
+        sp = self.request(f"wireless?form=syspara_{band}", operation="read")
+        if wmm is not None:
+            sp["wmm"] = "on" if wmm else "off"
+        if ap_isolation is not None:
+            sp["isolate"] = "on" if ap_isolation else "off"
+        if beacon_interval is not None:
+            sp["beacon_int"] = str(beacon_interval)
+        if dtim is not None:
+            sp["dtim_period"] = str(dtim)
+        if rts_threshold is not None:
+            sp["rts"] = str(rts_threshold)
+        if frag_threshold is not None:
+            sp["frag"] = str(frag_threshold)
+        if group_key_update is not None:
+            sp["wpa_group_rekey"] = str(group_key_update)
+        return self.request(f"wireless?form=syspara_{band}", operation="write", params=sp)
+
+    def set_wireless_advanced(
+        self,
+        band: str,
+        txpower: Optional[str] = None,
+        mu_mimo: Optional[bool] = None,
+        airtime_fairness: Optional[bool] = None,
+    ) -> Any:
+        """Set per-band tx power ('high'/'mid'/'low'), MU-MIMO, airtime fairness
+        (read-modify-write). Restarts the radio; clients on the band drop briefly."""
+        spf = self.get_wifi_radio(band)
+        if txpower is not None:
+            spf["txpower"] = str(txpower)
+        if mu_mimo is not None:
+            spf["mu_mimo"] = "on" if mu_mimo else "off"
+        if airtime_fairness is not None:
+            spf["airtime_fairness"] = "on" if airtime_fairness else "off"
+        return self.request(f"wireless?form=wireless_{band}", operation="write_spf", params=spf)
+
+    def set_ofdma(self, enabled: bool) -> Any:
+        """Enable/disable OFDMA (Wi-Fi 6 efficiency). Restarts the radios."""
+        return self.request("wireless?form=ofdma", operation="write", params={"enable": "on" if enabled else "off"})
+
+    def set_twt(self, enabled: bool) -> Any:
+        """Enable/disable Target Wake Time (Wi-Fi 6 power-save; eases iOS/phone battery drain).
+        Restarts the radios."""
+        return self.request("wireless?form=twt", operation="write", params={"enable": "on" if enabled else "off"})
+
+    def set_smart_connect(self, enabled: bool) -> Any:
+        """Enable/disable Smart Connect band steering (one SSID across bands). Restarts radios."""
+        return self.request(
+            "wireless?form=smart_connect", operation="write", params={"smart_enable": "on" if enabled else "off"}
+        )
 
     # -- session introspection / whole-state snapshot -----------------------
 
