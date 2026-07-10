@@ -74,7 +74,7 @@ class Config:
         if missing:
             raise ConfigError(
                 f"missing required config: {', '.join(missing)}. "
-                f"Set ROUTER_IP and ROUTER_PASSWORD in .env, env vars, or pass flags."
+                f"Set ROUTER_IP/ROUTER_HOST/TPLINK_HOST and ROUTER_PASSWORD/TPLINK_PASSWORD in .env, env vars, or pass flags."
             )
         assert resolved_host and resolved_pass  # for type-checkers
         return cls(host=resolved_host, password=resolved_pass, username=resolved_user, secure_hash=secure)
