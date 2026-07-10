@@ -1,0 +1,1 @@
+next time imma flash my own openwrt so i dont have to do this shit
