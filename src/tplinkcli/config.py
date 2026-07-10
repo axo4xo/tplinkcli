@@ -56,9 +56,11 @@ def env_file_candidates(
         if candidate.is_file():
             found.append(candidate)
             break
-    override = explicit or (
-        Path(os.environ["TPLINK_ENV"]) if os.environ.get("TPLINK_ENV") else None
-    )
+    override: Optional[Path] = None
+    if explicit and explicit.is_file():
+        override = explicit
+    elif os.environ.get("TPLINK_ENV"):
+        override = Path(os.environ["TPLINK_ENV"])
     if override and override.is_file():
         found.append(override)
     return found
