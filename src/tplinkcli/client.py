@@ -8,6 +8,7 @@ the useful features. Everything runs over the router's self-signed HTTPS.
 from __future__ import annotations
 
 import json
+import threading
 from typing import Any, Optional
 from urllib.parse import urlencode
 
@@ -51,6 +52,9 @@ class TplinkClient:
         self.secure_hash = secure_hash
         self.stok: str = ""
         self.encryptor: Optional[TpEncryptor] = None
+        # The router has ONE session; serialize login()/request() so concurrent callers
+        # (e.g. the MCP server fielding a batch of tool calls) can't corrupt it.
+        self._lock = threading.RLock()
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -104,7 +108,12 @@ class TplinkClient:
 
         ``force`` retries with ``confirm=true`` if the router reports another active admin
         session (it allows only one), taking over that session — same as the web UI does.
+        Serialized with the per-client lock.
         """
+        with self._lock:
+            return self._login(force)
+
+    def _login(self, force: bool) -> str:
         # 1. RSA key that encrypts the password.
         keys = self._post_plain("/login?form=keys", {"operation": "read"})
         pw_n, pw_e = keys["password"]
@@ -153,7 +162,18 @@ class TplinkClient:
         """POST to /admin/<form_path> (e.g. "status?form=client_status") and return data.
 
         The plaintext body is a url-encoded form string beginning with ``operation=...``.
+        Serialized with the per-client lock so concurrent callers (e.g. the MCP server
+        handling a batch of tool calls) never race on the single session.
         """
+        with self._lock:
+            return self._request(form_path, operation, params)
+
+    def _request(
+        self,
+        form_path: str,
+        operation: str = "read",
+        params: Optional[dict[str, Any]] = None,
+    ) -> Any:
         if self.encryptor is None or not self.stok:
             raise AuthError("not logged in; call login() first")
         body = {"operation": operation}
@@ -161,7 +181,10 @@ class TplinkClient:
             body.update(params)
         req = self.encryptor.encrypt_request(urlencode(body), is_login=False)
         r = self._post(f"/admin/{form_path}", req.as_form())
-        r.raise_for_status()
+        try:
+            r.raise_for_status()
+        except requests.HTTPError as e:
+            raise TplinkError(f"{form_path}: HTTP {r.status_code}: {r.text[:120]!r}") from e
         if not r.text.strip():
             raise AuthError(f"{form_path}: empty response body (HTTP {r.status_code}) — session likely invalid")
         try:

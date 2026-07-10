@@ -47,3 +47,39 @@ def test_logout_without_session_is_noop():
     c = TplinkClient("192.0.2.1", password="x")
     c.logout()  # no session -> no network call, just clears state
     assert not c.logged_in
+
+
+def test_concurrent_requests_are_serialized():
+    # Concurrent callers (the MCP batch bug) must not overlap on the single session.
+    import concurrent.futures as cf
+    import threading
+    import time
+
+    c = _session_client()
+    guard = threading.Lock()
+    state = {"active": 0, "max": 0}
+
+    class FakeResp:
+        status_code = 200
+        text = '{"success": true, "data": {"ok": 1}}'
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"success": True, "data": {"ok": 1}}
+
+    def fake_post(path, body):
+        with guard:
+            state["active"] += 1
+            state["max"] = max(state["max"], state["active"])
+        time.sleep(0.02)
+        with guard:
+            state["active"] -= 1
+        return FakeResp()
+
+    c._post = fake_post  # type: ignore[assignment]
+    with cf.ThreadPoolExecutor(max_workers=5) as ex:
+        for f in [ex.submit(c.request, "status?form=x") for _ in range(5)]:
+            f.result()
+    assert state["max"] == 1  # the per-client lock kept them one-at-a-time
