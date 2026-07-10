@@ -6,6 +6,8 @@ Requires the optional dependency:  pip install "tplinkcli[mcp]"
 
 from __future__ import annotations
 
+import sys
+import threading
 from typing import Any, Optional
 
 from .client import AuthError, TplinkClient
@@ -21,9 +23,12 @@ except ImportError as exc:  # pragma: no cover
 mcp = FastMCP("tplink-router")
 
 _client: Optional[TplinkClient] = None
+# The router permits one admin session; this lock serializes tool calls so a batch of
+# concurrent calls can't race the lazy login / share the session unsafely.
+_lock = threading.Lock()
 
 
-def _get_client() -> TplinkClient:
+def _get_client() -> TplinkClient:  # call with _lock held
     global _client
     if _client is None:
         cfg = Config.load()
@@ -33,13 +38,20 @@ def _get_client() -> TplinkClient:
 
 
 def _call(fn):
-    """Run a client method, re-logging in once if the session went stale."""
-    try:
-        return fn(_get_client())
-    except AuthError:
-        global _client
-        _client = None
-        return fn(_get_client())
+    """Run a client method under the session lock, re-logging in once if it went stale."""
+    global _client
+    with _lock:
+        try:
+            return fn(_get_client())
+        except AuthError:
+            print("tplink-mcp: session expired/taken over — re-logging in and retrying", file=sys.stderr)
+            if _client is not None:
+                try:
+                    _client.logout()
+                finally:
+                    _client.close()
+            _client = None
+            return fn(_get_client())
 
 
 @mcp.tool()

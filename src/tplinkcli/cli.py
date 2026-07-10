@@ -1,16 +1,23 @@
 """Command-line interface for the TP-Link router.
 
-Usage examples:
+Run ``tplink`` with no command to open an interactive session: it logs in once, gives
+you a ``tplink>`` prompt that reuses that single login, and logs out on ``exit``. Run
+``tplink <command>`` for a one-shot call (log in, run it, log out) — this matters because
+the router allows only one admin session at a time, so we hold it for as short as possible.
+
+Examples:
+    tplink                         # interactive session
     tplink clients                 # list connected devices
-    tplink status                  # router / wan overview
-    tplink reboot --yes            # reboot without the confirm prompt
-    tplink raw status?form=client_status --op load --json
+    tplink status
+    tplink reboot --yes
+    tplink raw 'status?form=client_status' --op load --json
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
 from typing import Any, Optional
 
@@ -26,24 +33,15 @@ def _print_table(rows: list[dict[str, Any]], columns: list[str]) -> None:
     for r in rows:
         for c in columns:
             widths[c] = max(widths[c], len(str(r.get(c, ""))))
-    header = "  ".join(c.upper().ljust(widths[c]) for c in columns)
-    print(header)
+    print("  ".join(c.upper().ljust(widths[c]) for c in columns))
     print("  ".join("-" * widths[c] for c in columns))
     for r in rows:
         print("  ".join(str(r.get(c, "")).ljust(widths[c]) for c in columns))
 
 
-def _client(args: argparse.Namespace) -> TplinkClient:
-    cfg = Config.load(host=args.host, username=args.username, password=args.password)
-    client = TplinkClient(cfg.host, cfg.password, cfg.username, secure_hash=cfg.secure_hash)
-    client.login()
-    return client
+# -- commands (each receives an already-logged-in client) -------------------
 
-
-# -- commands ---------------------------------------------------------------
-
-def cmd_login(args: argparse.Namespace) -> int:
-    client = _client(args)
+def cmd_login(client: TplinkClient, args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps({"stok": client.stok}))
     else:
@@ -51,8 +49,7 @@ def cmd_login(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_clients(args: argparse.Namespace) -> int:
-    client = _client(args)
+def cmd_clients(client: TplinkClient, args: argparse.Namespace) -> int:
     groups = client.get_clients()
     if args.json:
         print(json.dumps(groups, indent=2))
@@ -85,8 +82,7 @@ def _fmt_uptime(seconds: Any) -> str:
     return " ".join(p for p in parts if p)
 
 
-def cmd_status(args: argparse.Namespace) -> int:
-    client = _client(args)
+def cmd_status(client: TplinkClient, args: argparse.Namespace) -> int:
     mode = client.get_sysmode()
     alld = client.get_status_all()
     if args.json:
@@ -110,14 +106,12 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_wan(args: argparse.Namespace) -> int:
-    client = _client(args)
+def cmd_wan(client: TplinkClient, args: argparse.Namespace) -> int:
     print(json.dumps(client.get_wan_status(), indent=2))
     return 0
 
 
-def cmd_wifi(args: argparse.Namespace) -> int:
-    client = _client(args)
+def cmd_wifi(client: TplinkClient, args: argparse.Namespace) -> int:
     bands = client.get_wifi()
     if args.json:
         print(json.dumps(bands, indent=2))
@@ -136,8 +130,7 @@ def cmd_wifi(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_ports(args: argparse.Namespace) -> int:
-    client = _client(args)
+def cmd_ports(client: TplinkClient, args: argparse.Namespace) -> int:
     ports = client.get_ethernet_ports()
     if args.json:
         print(json.dumps(ports, indent=2))
@@ -156,8 +149,7 @@ def cmd_ports(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_dhcp(args: argparse.Namespace) -> int:
-    client = _client(args)
+def cmd_dhcp(client: TplinkClient, args: argparse.Namespace) -> int:
     leases = client.get_dhcp_leases()
     if args.json:
         print(json.dumps(leases, indent=2))
@@ -176,24 +168,22 @@ def cmd_dhcp(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_reboot(args: argparse.Namespace) -> int:
+def cmd_reboot(client: TplinkClient, args: argparse.Namespace) -> int:
     if not args.yes:
         reply = input("Reboot the router now? [y/N] ").strip().lower()
         if reply not in {"y", "yes"}:
             print("aborted")
             return 1
-    client = _client(args)
     client.reboot()
     print("reboot requested")
     return 0
 
 
-def cmd_raw(args: argparse.Namespace) -> int:
+def cmd_raw(client: TplinkClient, args: argparse.Namespace) -> int:
     params: dict[str, str] = {}
     for kv in args.param or []:
         key, _, val = kv.partition("=")
         params[key] = val
-    client = _client(args)
     data = client.request(args.form_path, operation=args.op, params=params or None)
     print(json.dumps(data, indent=2))
     return 0
@@ -201,13 +191,7 @@ def cmd_raw(args: argparse.Namespace) -> int:
 
 # -- parser -----------------------------------------------------------------
 
-def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="tplink", description="Control a TP-Link Archer/AX router from the CLI.")
-    p.add_argument("--host", help="router IP/host (default: ROUTER_IP from .env)")
-    p.add_argument("--username", help="login username (default: admin)")
-    p.add_argument("--password", help="login password (default: ROUTER_PASSWORD from .env)")
-    sub = p.add_subparsers(dest="command", required=True)
-
+def _register_commands(sub: "argparse._SubParsersAction") -> None:
     def add(name: str, fn, help_: str) -> argparse.ArgumentParser:
         sp = sub.add_parser(name, help=help_)
         sp.set_defaults(func=fn)
@@ -227,7 +211,73 @@ def build_parser() -> argparse.ArgumentParser:
     raw.add_argument("form_path", help='e.g. "status?form=client_status"')
     raw.add_argument("--op", default="read", help="operation (read/load/write/...)")
     raw.add_argument("--param", action="append", help="extra body param k=v (repeatable)")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="tplink", description="Control a TP-Link Archer/AX router from the CLI.")
+    p.add_argument("--host", help="router IP/host (default: ROUTER_IP from .env)")
+    p.add_argument("--username", help="login username (default: admin)")
+    p.add_argument("--password", help="login password (default: ROUTER_PASSWORD from .env)")
+    # subcommand optional: no command opens the interactive session.
+    _register_commands(p.add_subparsers(dest="command", required=False))
     return p
+
+
+def build_repl_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="", add_help=False)
+    _register_commands(p.add_subparsers(dest="command"))
+    return p
+
+
+# -- session dispatch / REPL ------------------------------------------------
+
+def _dispatch(client: TplinkClient, args: argparse.Namespace) -> int:
+    """Run one command, re-logging in once if the session was taken over mid-use."""
+    try:
+        return args.func(client, args)
+    except AuthError:
+        print("session was taken over — re-logging in...", file=sys.stderr)
+        client.login()
+        return args.func(client, args)
+
+
+def run_repl(client: TplinkClient) -> int:
+    parser = build_repl_parser()
+    print("tplink interactive session — type a command, `help`, or `exit`.")
+    while True:
+        try:
+            line = input("tplink> ").strip()
+        except EOFError:
+            print()
+            break
+        except KeyboardInterrupt:
+            print()
+            continue
+        if not line:
+            continue
+        if line in {"exit", "quit", "logout", "q"}:
+            break
+        if line in {"help", "?"}:
+            parser.print_help()
+            continue
+        try:
+            tokens = shlex.split(line)
+        except ValueError as e:
+            print(f"parse error: {e}", file=sys.stderr)
+            continue
+        try:
+            args = parser.parse_args(tokens)
+        except SystemExit:
+            continue  # argparse already reported the bad command / printed help
+        if not getattr(args, "func", None):
+            continue
+        try:
+            _dispatch(client, args)
+        except TplinkError as e:
+            print(f"error: {e}", file=sys.stderr)
+        except Exception as e:  # keep the session alive on any single-command failure
+            print(f"error: {e}", file=sys.stderr)
+    return 0
 
 
 def _silence_tls_warnings() -> None:
@@ -242,10 +292,25 @@ def main(argv: Optional[list[str]] = None) -> int:
     _silence_tls_warnings()
     args = build_parser().parse_args(argv)
     try:
-        return args.func(args)
+        cfg = Config.load(host=args.host, username=args.username, password=args.password)
     except ConfigError as e:
         print(f"config error: {e}", file=sys.stderr)
         return 2
+
+    client = TplinkClient(cfg.host, cfg.password, cfg.username, secure_hash=cfg.secure_hash)
+    try:
+        client.login()
+    except AuthError as e:
+        print(f"auth error: {e}", file=sys.stderr)
+        return 3
+    except (TplinkError, OSError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    try:
+        if not args.command:
+            return run_repl(client)
+        return _dispatch(client, args)
     except AuthError as e:
         print(f"auth error: {e}", file=sys.stderr)
         return 3
@@ -254,6 +319,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
     except KeyboardInterrupt:
         return 130
+    finally:
+        client.logout()  # release the single admin session for the WebUI / next run
+        client.close()
 
 
 if __name__ == "__main__":

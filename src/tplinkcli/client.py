@@ -8,6 +8,7 @@ the useful features. Everything runs over the router's self-signed HTTPS.
 from __future__ import annotations
 
 import json
+import threading
 from typing import Any, Optional
 from urllib.parse import urlencode
 
@@ -51,6 +52,9 @@ class TplinkClient:
         self.secure_hash = secure_hash
         self.stok: str = ""
         self.encryptor: Optional[TpEncryptor] = None
+        # The router has ONE session; serialize login()/request() so concurrent callers
+        # (e.g. the MCP server fielding a batch of tool calls) can't corrupt it.
+        self._lock = threading.RLock()
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -84,9 +88,17 @@ class TplinkClient:
         return payload.get("data", {})
 
     def _decode(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """A response is either plain JSON or {"data": "<base64>"} that we AES-decrypt."""
-        if isinstance(payload.get("data"), str) and self.encryptor is not None:
-            return json.loads(self.encryptor.decrypt_response(payload["data"]))
+        """A response is either plain JSON or {"data": "<base64>"} that we AES-decrypt.
+
+        A dead session (expired, or taken over by the WebUI/another client — the router
+        allows one admin at a time) answers with an empty ``data`` string. Surface that as
+        an AuthError so callers can re-login, instead of crashing in the AES un-pad.
+        """
+        data = payload.get("data")
+        if isinstance(data, str) and self.encryptor is not None:
+            if data == "":
+                raise AuthError("empty response — session expired or taken over by another admin")
+            return json.loads(self.encryptor.decrypt_response(data))
         return payload
 
     # -- login --------------------------------------------------------------
@@ -96,7 +108,12 @@ class TplinkClient:
 
         ``force`` retries with ``confirm=true`` if the router reports another active admin
         session (it allows only one), taking over that session — same as the web UI does.
+        Serialized with the per-client lock.
         """
+        with self._lock:
+            return self._login(force)
+
+    def _login(self, force: bool) -> str:
         # 1. RSA key that encrypts the password.
         keys = self._post_plain("/login?form=keys", {"operation": "read"})
         pw_n, pw_e = keys["password"]
@@ -145,7 +162,18 @@ class TplinkClient:
         """POST to /admin/<form_path> (e.g. "status?form=client_status") and return data.
 
         The plaintext body is a url-encoded form string beginning with ``operation=...``.
+        Serialized with the per-client lock so concurrent callers (e.g. the MCP server
+        handling a batch of tool calls) never race on the single session.
         """
+        with self._lock:
+            return self._request(form_path, operation, params)
+
+    def _request(
+        self,
+        form_path: str,
+        operation: str = "read",
+        params: Optional[dict[str, Any]] = None,
+    ) -> Any:
         if self.encryptor is None or not self.stok:
             raise AuthError("not logged in; call login() first")
         body = {"operation": operation}
@@ -153,8 +181,17 @@ class TplinkClient:
             body.update(params)
         req = self.encryptor.encrypt_request(urlencode(body), is_login=False)
         r = self._post(f"/admin/{form_path}", req.as_form())
-        r.raise_for_status()
-        decoded = self._decode(r.json())
+        try:
+            r.raise_for_status()
+        except requests.HTTPError as e:
+            raise TplinkError(f"{form_path}: HTTP {r.status_code}: {r.text[:120]!r}") from e
+        if not r.text.strip():
+            raise AuthError(f"{form_path}: empty response body (HTTP {r.status_code}) — session likely invalid")
+        try:
+            payload = r.json()
+        except ValueError:
+            raise TplinkError(f"{form_path}: non-JSON response (HTTP {r.status_code}): {r.text[:120]!r}")
+        decoded = self._decode(payload)
         if not decoded.get("success", True):
             code = str(decoded.get("errorcode"))
             if code in {"-40401", "0", "timeout"} or "login" in code.lower():
@@ -225,6 +262,24 @@ class TplinkClient:
         """Reboot the router (operation write)."""
         return self.request("system?form=reboot", operation="write")
 
+    def logout(self) -> None:
+        """Release the admin session so another client (e.g. the WebUI) can log in.
+
+        Best-effort: if the session is already gone, there is nothing to release.
+        """
+        with self._lock:
+            if self.logged_in:
+                try:
+                    self.request("system?form=logout", operation="write")
+                except Exception:
+                    pass  # session may already be gone / router rebooting
+            self.stok = ""
+            self.encryptor = None
+
+    @property
+    def logged_in(self) -> bool:
+        return bool(self.stok and self.encryptor is not None)
+
     def set_wireless_enabled(self, band: str, enabled: bool) -> Any:
         """Turn a wireless band's host network on or off (operation write)."""
         return self.request(
@@ -241,6 +296,7 @@ class TplinkClient:
         return self
 
     def __exit__(self, *exc: object) -> None:
+        self.logout()
         self.close()
 
 
