@@ -230,7 +230,16 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _silence_tls_warnings() -> None:
+    # The router uses a self-signed cert, so verify_tls is off by default. Silence the
+    # per-request InsecureRequestWarning here at the app entry point (not in the library).
+    import urllib3
+
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
 def main(argv: Optional[list[str]] = None) -> int:
+    _silence_tls_warnings()
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
