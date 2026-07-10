@@ -36,7 +36,7 @@ row, use the interactive session instead:
 tplink                   # interactive session:
 tplink> clients
 tplink> raw status?form=internet --op read   # no quoting needed in here
- tplink> exit           # logs out
+tplink> exit           # logs out
 ```
 
 One-shot commands:
