@@ -316,7 +316,11 @@ def cmd_watch(client: TplinkClient, args: argparse.Namespace) -> int:
                 print("  (session expired — re-logging in)", file=sys.stderr)
                 client.login()
                 items = cfg["fetch"](client)
-            cur = {cfg["key"](r): r for r in items if cfg["key"](r)}
+            cur = {}
+            for r in items:
+                k = cfg["key"](r)
+                if k:
+                    cur[k] = r
             for k, item in cur.items():
                 if k not in prev:
                     line("+", "present" if first else "join", item)
