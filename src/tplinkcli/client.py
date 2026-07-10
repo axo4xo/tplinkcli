@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from typing import Any, Optional
 from urllib.parse import urlencode
 
@@ -52,6 +53,8 @@ class TplinkClient:
         self.secure_hash = secure_hash
         self.stok: str = ""
         self.encryptor: Optional[TpEncryptor] = None
+        self._login_time: Optional[float] = None
+        self._login_count = 0
         # The router has ONE session; serialize login()/request() so concurrent callers
         # (e.g. the MCP server fielding a batch of tool calls) can't corrupt it.
         self._lock = threading.RLock()
@@ -137,6 +140,8 @@ class TplinkClient:
         if not stok:
             raise AuthError(f"login failed: {decoded}", str(decoded.get("errorcode")))
         self.stok = stok
+        self._login_time = time.time()
+        self._login_count += 1
         return stok
 
     def _submit_login(self, enc_password: str, confirm: bool) -> tuple[str, dict[str, Any]]:
@@ -257,6 +262,179 @@ class TplinkClient:
     def get_dhcp_leases(self) -> list[dict[str, Any]]:
         data = self.request("dhcps?form=client", operation="load")
         return data if isinstance(data, list) else data.get("clients", [])
+
+    # -- syslog -------------------------------------------------------------
+
+    def get_syslog(
+        self, level: Optional[str] = None, log_type: Optional[str] = None, limit: Optional[int] = None
+    ) -> list[dict[str, Any]]:
+        """System log entries ``[{time, level, type, content}]`` (newest first).
+
+        Optional client-side filter by ``level`` (INFO/WARNING/ERROR) and ``log_type``
+        (see ``get_syslog_types``); ``limit`` caps the count.
+        """
+        entries = self.request("syslog?form=log", operation="load")
+        if not isinstance(entries, list):
+            entries = entries.get("log", []) if isinstance(entries, dict) else []
+        if level:
+            entries = [e for e in entries if str(e.get("level", "")).upper() == level.upper()]
+        if log_type:
+            entries = [e for e in entries if str(e.get("type", "")).upper() == log_type.upper()]
+        return entries[:limit] if limit else entries
+
+    def get_syslog_types(self) -> list[dict[str, Any]]:
+        return self.request("syslog?form=types", operation="load")
+
+    # -- DHCP server config + reservations ----------------------------------
+
+    def get_dhcp_settings(self) -> dict[str, Any]:
+        """DHCP server config: enable, ipaddr_start/end, leasetime (minutes), gateway, DNS."""
+        return self.request("dhcps?form=setting")
+
+    def set_dhcp_settings(self, **changes: Any) -> Any:
+        """Update DHCP server settings (read-modify-write).
+
+        Keys: ``enable`` (on/off), ``leasetime`` (minutes), ``ipaddr_start``, ``ipaddr_end``,
+        ``gateway``, ``pri_dns``, ``snd_dns``, ``domain``. Restarts the DHCP server; existing
+        leases keep their current IP until renewal.
+        """
+        current = self.get_dhcp_settings()
+        current.update({k: str(v) for k, v in changes.items()})
+        return self.request("dhcps?form=setting", operation="write", params=current)
+
+    def list_reservations(self) -> list[dict[str, Any]]:
+        """DHCP address reservations ``[{mac, ip, comment, hostname, enable}]``."""
+        data = self.request("dhcps?form=reservation", operation="load")
+        return data if isinstance(data, list) else data.get("reservations", [])
+
+    def add_reservation(self, mac: str, ip: str, comment: str = "") -> Any:
+        """Reserve ``ip`` for ``mac`` (operation add). ``mac`` as AA-BB-CC-DD-EE-FF."""
+        return self.request(
+            "dhcps?form=reservation",
+            operation="add",
+            params={"mac": mac, "ip": ip, "comment": comment, "enable": "on"},
+        )
+
+    def remove_reservation(self, mac: str) -> Any:
+        """Delete the reservation for ``mac`` (operation remove)."""
+        return self.request("dhcps?form=reservation", operation="remove", params={"mac": mac})
+
+    # -- per-client wireless stats ------------------------------------------
+
+    def get_client_stats(self) -> list[dict[str, Any]]:
+        """Per-client wireless stats: RSSI (dBm), negotiated PHY rates, band, packets.
+
+        Merges ``smart_network game_accelerator`` (signal + tx/rx rate) with
+        ``wireless statistics`` (band + packet counts), keyed by MAC. Online clients only.
+        """
+        by_mac: dict[str, dict[str, Any]] = {}
+        for d in self.request("smart_network?form=game_accelerator", operation="loadDevice"):
+            if d.get("deviceTag") == "offline":
+                continue
+            by_mac[d["mac"]] = {
+                "name": d.get("deviceName"),
+                "mac": d.get("mac"),
+                "signal_dbm": d.get("signal"),
+                "tx_rate_kbps": d.get("txrate"),
+                "rx_rate_kbps": d.get("rxrate"),
+                "online_seconds": int(d.get("onlineTime") or 0),
+            }
+        for s in self.request("wireless?form=statistics", operation="load"):
+            row = by_mac.setdefault(s["mac"], {"mac": s["mac"]})
+            row["band"] = s.get("type")
+            row["rx_packets"] = s.get("rxpkts")
+            row["tx_packets"] = s.get("txpkts")
+        return list(by_mac.values())
+
+    # -- wireless radio (channel / security / advanced) ---------------------
+
+    def get_wifi_radio(self, band: str) -> dict[str, Any]:
+        """Full radio settings for a band: ssid, channel, htmode, encryption, txpower, etc."""
+        return self.request(f"wireless?form=wireless_{band}", operation="read_spf")
+
+    def set_wifi_channel(self, band: str, channel: Any, htmode: Optional[str] = None) -> Any:
+        """Set the channel (and optionally HT/VHT width) for a band (read-modify-write).
+
+        ⚠️ Restarts the radio: connected clients drop for ~10 s. A DFS 5 GHz channel adds a
+        ~60 s radar-scan quiet period before the radio comes back. ``channel=auto`` lets the
+        router pick. ``htmode`` e.g. "20"/"40"/"80"; see get_wifi_radio / wireless region.
+        """
+        spf = self.get_wifi_radio(band)
+        spf["channel"] = str(channel)
+        if htmode is not None:
+            spf["htmode"] = str(htmode)
+        return self.request(f"wireless?form=wireless_{band}", operation="write_spf", params=spf)
+
+    def set_wifi_security(
+        self, band: str, encryption: str, password: Optional[str] = None
+    ) -> Any:
+        """Set the security mode / password for a band (read-modify-write).
+
+        ⚠️ Restarts the radio and disconnects every client on that band until they
+        re-authenticate with the new settings. ``encryption`` is the router's mode string
+        (e.g. as read back in get_wifi_radio); ``password`` sets the WPA/WPA2/WPA3 PSK.
+        """
+        spf = self.get_wifi_radio(band)
+        spf["encryption"] = str(encryption)
+        if password is not None:
+            spf["psk_key"] = password
+        return self.request(f"wireless?form=wireless_{band}", operation="write_spf", params=spf)
+
+    # -- WPS / guest network ------------------------------------------------
+
+    def get_wps(self) -> dict[str, Any]:
+        return self.request("wireless?form=syspara_wps")
+
+    def set_wps(self, enabled: bool) -> Any:
+        """Enable/disable WPS globally (operation write)."""
+        return self.request(
+            "wireless?form=syspara_wps", operation="write", params={"wps": "on" if enabled else "off"}
+        )
+
+    def get_guest_network(self, band: str) -> dict[str, Any]:
+        """Guest network config for a band (ssid, enable, encryption, psk, isolation)."""
+        return self.request(f"wireless?form=guest_{band}")
+
+    def set_guest_network(self, band: str, enabled: bool) -> Any:
+        """Turn a band's guest network on/off (read-modify-write)."""
+        cfg = self.get_guest_network(band)
+        cfg["enable"] = "on" if enabled else "off"
+        cfg["disabled"] = "off" if enabled else "on"
+        return self.request(f"wireless?form=guest_{band}", operation="write", params=cfg)
+
+    # -- session introspection / whole-state snapshot -----------------------
+
+    def session_info(self) -> dict[str, Any]:
+        """Observability for the auto-recovering session: age, login count, token prefix."""
+        age = (time.time() - self._login_time) if self._login_time else None
+        return {
+            "logged_in": self.logged_in,
+            "stok_prefix": self.stok[:8] if self.stok else None,
+            "age_seconds": round(age, 1) if age is not None else None,
+            "login_count": self._login_count,
+        }
+
+    def dump(self) -> dict[str, Any]:
+        """One full-state snapshot for config-drift / before-after diffing."""
+        radios: dict[str, Any] = {}
+        for band in self.WIFI_BANDS:
+            try:
+                radios[band] = self.get_wifi_radio(band)
+            except TplinkError:
+                continue
+        return {
+            "sysmode": self.get_sysmode(),
+            "status": self.get_status_all(),
+            "clients": self.get_clients(),
+            "client_stats": self.get_client_stats(),
+            "wifi": self.get_wifi(),
+            "radios": radios,
+            "dhcp_settings": self.get_dhcp_settings(),
+            "reservations": self.list_reservations(),
+            "dhcp_leases": self.get_dhcp_leases(),
+            "ethernet_ports": self.get_ethernet_ports(),
+            "wps": self.get_wps(),
+        }
 
     def reboot(self) -> Any:
         """Reboot the router (operation write)."""

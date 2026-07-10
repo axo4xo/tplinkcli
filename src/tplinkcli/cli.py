@@ -189,6 +189,87 @@ def cmd_raw(client: TplinkClient, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_syslog(client: TplinkClient, args: argparse.Namespace) -> int:
+    entries = client.get_syslog(level=args.level, log_type=args.type, limit=args.limit)
+    if args.json:
+        print(json.dumps(entries, indent=2))
+        return 0
+    rows = [
+        {"time": e.get("time", ""), "level": e.get("level", ""), "type": e.get("type", ""), "message": e.get("content", "")}
+        for e in entries
+    ]
+    _print_table(rows, ["time", "level", "type", "message"])
+    return 0
+
+
+def cmd_stats(client: TplinkClient, args: argparse.Namespace) -> int:
+    stats = client.get_client_stats()
+    if args.json:
+        print(json.dumps(stats, indent=2))
+        return 0
+    rows = [
+        {
+            "name": s.get("name", ""),
+            "band": s.get("band", ""),
+            "signal": f"{s['signal_dbm']} dBm" if s.get("signal_dbm") is not None else "",
+            "tx": f"{s['tx_rate_kbps'] // 1000}M" if s.get("tx_rate_kbps") else "",
+            "rx": f"{s['rx_rate_kbps'] // 1000}M" if s.get("rx_rate_kbps") else "",
+            "mac": s.get("mac", ""),
+        }
+        for s in stats
+    ]
+    _print_table(rows, ["name", "band", "signal", "tx", "rx", "mac"])
+    return 0
+
+
+def cmd_reservations(client: TplinkClient, args: argparse.Namespace) -> int:
+    res = client.list_reservations()
+    if args.json:
+        print(json.dumps(res, indent=2))
+        return 0
+    rows = [
+        {"name": r.get("comment") or r.get("hostname", ""), "ip": r.get("ip", ""), "mac": r.get("mac", ""), "enabled": r.get("enable", "")}
+        for r in res
+    ]
+    print(f"{len(rows)} reservation(s):\n")
+    _print_table(rows, ["name", "ip", "mac", "enabled"])
+    return 0
+
+
+def cmd_dhcp_config(client: TplinkClient, args: argparse.Namespace) -> int:
+    print(json.dumps(client.get_dhcp_settings(), indent=2))
+    return 0
+
+
+def cmd_radio(client: TplinkClient, args: argparse.Namespace) -> int:
+    radio = client.get_wifi_radio(args.band)
+    if args.json:
+        print(json.dumps(radio, indent=2))
+        return 0
+    keys = ["ssid", "channel", "current_channel", "htmode", "hwmode", "encryption", "txpower", "mu_mimo", "airtime_fairness", "hidden"]
+    for k in keys:
+        if k in radio:
+            print(f"{k:18} {radio[k]}")
+    return 0
+
+
+def cmd_session(client: TplinkClient, args: argparse.Namespace) -> int:
+    print(json.dumps(client.session_info(), indent=2))
+    return 0
+
+
+def cmd_dump(client: TplinkClient, args: argparse.Namespace) -> int:
+    snapshot = client.dump()
+    text = json.dumps(snapshot, indent=2)
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(text)
+        print(f"wrote full-state snapshot to {args.output}")
+    else:
+        print(text)
+    return 0
+
+
 # -- parser -----------------------------------------------------------------
 
 def _register_commands(sub: "argparse._SubParsersAction") -> None:
@@ -211,6 +292,19 @@ def _register_commands(sub: "argparse._SubParsersAction") -> None:
     raw.add_argument("form_path", help='e.g. "status?form=client_status"')
     raw.add_argument("--op", default="read", help="operation (read/load/write/...)")
     raw.add_argument("--param", action="append", help="extra body param k=v (repeatable)")
+
+    syslog = add("syslog", cmd_syslog, "system log (filter by --level/--type)")
+    syslog.add_argument("--level", help="INFO / WARNING / ERROR")
+    syslog.add_argument("--type", help="log category (see router)")
+    syslog.add_argument("--limit", type=int, help="max entries")
+    add("stats", cmd_stats, "per-client wireless stats (signal, PHY rate, band)")
+    add("reservations", cmd_reservations, "DHCP address reservations")
+    add("dhcp-config", cmd_dhcp_config, "DHCP server config (pool, lease time, DNS)")
+    radio = add("radio", cmd_radio, "wireless radio settings for a band")
+    radio.add_argument("band", nargs="?", default="2g", help="2g / 5g / 5g_2 / 6g (default 2g)")
+    add("session", cmd_session, "session age / login count (recovery observability)")
+    dump = add("dump", cmd_dump, "full-state JSON snapshot (config-drift diffing)")
+    dump.add_argument("-o", "--output", help="write snapshot to a file instead of stdout")
 
 
 def build_parser() -> argparse.ArgumentParser:
