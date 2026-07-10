@@ -275,7 +275,11 @@ def cmd_ipv6(client: TplinkClient, args: argparse.Namespace) -> int:
 # target -> how to fetch, key by, label, render, and which fields count as a "change"
 _WATCH_TARGETS = {
     "clients": {
-        "fetch": lambda c: [d for grp in c.get_clients().values() for d in grp],
+        "fetch": lambda c: [
+            {**d, "wire_type": d.get("wire_type") or ("wifi" if kind == "wireless" else kind)}
+            for kind, grp in c.get_clients().items()
+            for d in grp
+        ],
         "key": lambda r: r.get("macaddr", ""),
         "label": lambda r: r.get("hostname") or "?",
         "cols": lambda r: f"{r.get('ipaddr',''):<15} {r.get('wire_type',''):<6} {r.get('macaddr','')}",
